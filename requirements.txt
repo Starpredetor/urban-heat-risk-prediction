@@ -1,0 +1,40 @@
+# Dependencies for the Urban Heat Risk Mapper.
+#
+# Needs Python 3.12. PyTorch, rasterio and odc-stac publish no wheels for
+# Python 3.13 or 3.14 yet, so a newer Python cannot install these.
+#
+# ---------------------------------------------------------------------------
+# PyTorch is deliberately NOT listed below. Install it FIRST, separately.
+#
+# The copy of PyTorch on PyPI is CPU-only. If it were listed here, running
+# "pip install -r requirements.txt" would quietly replace a working NVIDIA
+# build with the CPU one, and training would get much slower with no error.
+#
+#   With an NVIDIA graphics card:
+#     .venv/Scripts/python.exe -m pip install torch --index-url https://download.pytorch.org/whl/cu126
+#
+#   Without one (CPU only, much slower but works):
+#     .venv/Scripts/python.exe -m pip install torch
+#
+# Then check it found the card:
+#     .venv/Scripts/python.exe -c "import torch; print(torch.cuda.is_available())"
+#   Must print True.
+# ---------------------------------------------------------------------------
+#
+# Full setup from scratch, without uv:
+#     py -3.12 -m venv .venv
+#     .venv/Scripts/python.exe -m pip install torch --index-url https://download.pytorch.org/whl/cu126
+#     .venv/Scripts/python.exe -m pip install -r requirements.txt
+
+numpy==2.5.2
+xarray==2026.7.0
+netCDF4==1.7.4
+rasterio==1.5.1
+pystac-client==0.9.0
+planetary-computer==1.0.0
+odc-stac==0.5.3
+odc-geo==0.5.3
+pyproj==3.7.2
+PyYAML==6.0.3
+matplotlib==3.11.1
+pytest==9.1.1
