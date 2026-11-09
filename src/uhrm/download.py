@@ -25,7 +25,7 @@ from odc.geo.geobox import GeoBox
 from odc.stac import load as odc_load
 from pyproj import Transformer
 
-from uhrm.config import Settings
+from uhrm.config import City, Settings
 from uhrm.sensors import (
     hide_cloudy_pixels,
     landsat_is_clear,
@@ -41,29 +41,31 @@ log = logging.getLogger(__name__)
 ARCHIVE = "https://planetarycomputer.microsoft.com/api/stac/v1"
 
 
-def map_grid(settings: Settings) -> GeoBox:
-    """The one fixed grid every image is placed on.
+def map_grid(city: City) -> GeoBox:
+    """The one fixed grid every image of this city is placed on.
 
     Without this, images from different satellite passes sit a few metres apart
     and "change over time" would partly be that misalignment instead of a real
     change on the ground.
+
+    Every city gets exactly the same number of pixels, so patches from
+    different cities can be mixed together when training.
     """
-    to_map = Transformer.from_crs("EPSG:4326", settings.crs, always_xy=True)
-    left, bottom, right, top = settings.bbox
-    # All four corners: a rectangle in lon/lat is not a rectangle on a map.
-    xs, ys = to_map.transform([left, right, left, right], [bottom, bottom, top, top])
-    step = settings.resolution
-    bounds = (
-        math.floor(min(xs) / step) * step,
-        math.floor(min(ys) / step) * step,
-        math.ceil(max(xs) / step) * step,
-        math.ceil(max(ys) / step) * step,
-    )
-    return GeoBox.from_bbox(bounds, crs=settings.crs, resolution=step, tight=True)
+    to_map = Transformer.from_crs("EPSG:4326", city.crs, always_xy=True)
+    centre_x, centre_y = to_map.transform(city.lon, city.lat)
+
+    step = city.resolution
+    half = city.size_pixels * step / 2
+    # Snap to whole pixels so the grid is identical every time we build it.
+    left = math.floor((centre_x - half) / step) * step
+    bottom = math.floor((centre_y - half) / step) * step
+    bounds = (left, bottom, left + city.size_pixels * step,
+              bottom + city.size_pixels * step)
+    return GeoBox.from_bbox(bounds, crs=city.crs, resolution=step, tight=True)
 
 
-def find_images(sensor: dict, settings: Settings, year: int) -> list:
-    """Ask the archive for this year's images, least cloudy first."""
+def find_images(sensor: dict, settings: Settings, city: City, year: int) -> list:
+    """Ask the archive for this year's images of this city, least cloudy first."""
     catalog = pystac_client.Client.open(ARCHIVE, modifier=planetary_computer.sign_inplace)
     first, last = min(settings.months), max(settings.months)
     end = f"{year + 1}-01-01" if last == 12 else f"{year}-{last + 1:02d}-01"
@@ -75,7 +77,7 @@ def find_images(sensor: dict, settings: Settings, year: int) -> list:
     found = list(
         catalog.search(
             collections=[sensor["collection"]],
-            bbox=list(settings.bbox),
+            bbox=list(city.bbox),
             datetime=f"{year}-{first:02d}-01/{end}",
             query=filters,
         ).items()
@@ -84,12 +86,12 @@ def find_images(sensor: dict, settings: Settings, year: int) -> list:
     return found[: settings.max_images_per_year]
 
 
-def read_images(images: list, sensor: dict, settings: Settings) -> dict[str, np.ndarray]:
-    """Read the images onto the shared grid. Returns our band name -> array."""
+def read_images(images: list, sensor: dict, city: City) -> dict[str, np.ndarray]:
+    """Read the images onto the city's grid. Returns our band name -> array."""
     data = odc_load(
         images,
         bands=list(sensor["bands"].values()),
-        geobox=map_grid(settings),
+        geobox=map_grid(city),
         groupby="solar_day",           # images from the same day are one picture
         chunks={"x": 2048, "y": 2048},
         dtype="float32",
@@ -100,19 +102,20 @@ def read_images(images: list, sensor: dict, settings: Settings) -> dict[str, np.
     return {ours: data[theirs].values for ours, theirs in sensor["bands"].items()}
 
 
-def yearly_average(sensor: dict, settings: Settings, year: int) -> dict[str, np.ndarray]:
-    """One cloud-free picture for this satellite, this year.
+def yearly_average(sensor: dict, settings: Settings, city: City,
+                   year: int) -> dict[str, np.ndarray]:
+    """One cloud-free picture for this satellite, this city, this year.
 
     Returns each band in real units, plus `n_clear` counting how many good
     observations each pixel actually had.
     """
-    images = find_images(sensor, settings, year)
+    images = find_images(sensor, settings, city, year)
     if not images:
-        log.warning("%s %d: no usable images found", sensor["name"], year)
+        log.warning("  %s %d: no usable images found", sensor["name"], year)
         return {}
-    log.info("%s %d: using %d images", sensor["name"], year, len(images))
+    log.info("  %s %d: using %d images", sensor["name"], year, len(images))
 
-    raw = read_images(images, sensor, settings)
+    raw = read_images(images, sensor, city)
 
     if sensor["has_thermal"]:
         clear = landsat_is_clear(raw["quality"])
