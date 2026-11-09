@@ -1,8 +1,9 @@
-"""STEP 2 - Train the model and compare it to simple methods.
+"""STEP 3 - Train one model on every city, and compare it to simple methods.
 
     python scripts/train.py
 
-Reads data/cube.nc, trains the ConvLSTM, and prints a comparison table.
+Reads every city file in data/cubes/, pools them together, trains the ConvLSTM,
+and prints a comparison table.
 """
 
 import logging
@@ -20,13 +21,21 @@ def main():
     logging.basicConfig(level=logging.INFO, format="%(message)s")
     settings = load_settings()
 
-    if not settings.cube_path.exists():
-        print(f"No dataset found at {settings.cube_path}")
-        print("Run this first:  python scripts/build_dataset.py")
-        return 1
+    built = [c for c in settings.cities if settings.cube_path(c).exists()]
+    missing = [c.name for c in settings.cities if c not in built]
 
-    run(load_cube(settings.cube_path), settings, settings.out_dir / "results")
-    print(f"\n  Saved to {settings.out_dir / 'results'}")
+    if not built:
+        print("No city data found. Run this first:")
+        print("  python scripts/build_dataset.py")
+        return 1
+    if missing:
+        print(f"Note: no data yet for {', '.join(missing)} - training without them.")
+
+    cubes = [load_cube(settings.cube_path(c)) for c in built]
+    run(cubes, settings, settings.out_dir / "results")
+
+    print()
+    print(f"  Saved to {settings.out_dir / 'results'}")
     return 0
 
 

@@ -2,32 +2,50 @@
 #  Every choice this project makes lives in this one file.
 # ============================================================
 
-# --- Which city, and how detailed -------------------------------------------
-city: Mumbai
-bbox: [72.78, 18.99, 72.97, 19.17]   # left, bottom, right, top (longitude/latitude)
-crs: EPSG:32643                      # the map projection for this part of India
-resolution: 30                       # each pixel covers 30 x 30 metres
+# --- Which cities -----------------------------------------------------------
+# Each is a square centred on the city centre. The map projection for each is
+# worked out automatically from its longitude, because India spans two UTM
+# zones: Mumbai/Delhi/Ahmedabad are in zone 43N, Nagpur/Hyderabad/Chennai in 44N.
+cities:
+  - {name: Mumbai,    lat: 19.076, lon: 72.877}
+  - {name: Delhi,     lat: 28.614, lon: 77.209}
+  - {name: Ahmedabad, lat: 23.023, lon: 72.571}
+  - {name: Nagpur,    lat: 21.146, lon: 79.088}
+  - {name: Hyderabad, lat: 17.385, lon: 78.487}
+  - {name: Chennai,   lat: 13.083, lon: 80.270}
+
+radius_km: 40          # 40 x 40 km per city
+resolution: 30         # each pixel covers 30 x 30 metres  ->  1333 x 1333 pixels
 
 # --- Which images to use ----------------------------------------------------
-# 2017 onwards because Sentinel-2 images only exist worldwide from 2017.
-start_year: 2017
+# 2013 is when Landsat 8 launched. Landsat 5 and 7 reach back to 1988 and the
+# code supports them, but they use an older camera whose colours differ
+# slightly, which can put a false step in a trend graph at 2013. Start at 2013
+# for a clean single-generation series; lower this if you want more history and
+# are willing to discuss that caveat.
+start_year: 2013
 end_year: 2025
-months: [3, 4, 5]                    # March-May: Mumbai's hot, dry, cloud-free season
-max_cloud: 20                        # ignore any image more than 20% cloudy
-max_images_per_year: 12              # a dozen clear images is plenty to average
+
+# March-May is the pre-monsoon hot season. Checked against the archive: every
+# city has usable images then, and June-September is unusable everywhere
+# because of monsoon cloud. Chennai has the fewest clear images of the six.
+months: [3, 4, 5]
+
+max_cloud: 20              # ignore any image more than 20% cloudy
+max_images_per_year: 12    # a dozen clear images is plenty to average
 
 # --- How the model learns ---------------------------------------------------
-years_in: 4                          # look at 4 past years to predict the next
-patch: 64                            # learn from 64 x 64 pixel squares
+years_in: 3                # look at 3 past years to predict the next
+patch: 64                  # learn from 64 x 64 pixel squares
 
 # The model is TESTED on years it never saw while learning. This is what makes
 # the score honest. These three must not overlap, and must be in order.
-train_years: [2021, 2022]
-val_years:   [2023, 2023]
-test_years:  [2024, 2025]
+train_years: [2016, 2021]
+val_years:   [2022, 2022]
+test_years:  [2023, 2025]
 
 epochs: 40
-batch_size: 16
+batch_size: 32
 learning_rate: 0.001
 seed: 42
 
