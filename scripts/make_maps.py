@@ -134,37 +134,69 @@ def temperature_trend(cube, out, city):
     return averages
 
 
+def city_comparison(cubes, names, out):
+    """One chart comparing the heat island across every city."""
+    results = {}
+    for cube, name in zip(cubes, names):
+        lst, nb, nv, nw = (layer(cube, n) for n in ("lst", "ndbi", "ndvi", "ndwi"))
+        land = nw[-1] < 0
+        built = land & (nb[-1] > 0)
+        green = land & (nv[-1] > 0.4)
+        if built.sum() and green.sum():
+            results[name] = float(np.nanmean(lst[-1][built]) - np.nanmean(lst[-1][green]))
+
+    if not results:
+        return {}
+
+    order = sorted(results, key=results.get, reverse=True)
+    fig, ax = plt.subplots(figsize=(8, 5))
+    bars = ax.barh(order, [results[c] for c in order], color="#c0392b")
+    for bar, city in zip(bars, order):
+        ax.text(results[city] + 0.1, bar.get_y() + bar.get_height() / 2,
+                f"{results[city]:.1f} C", va="center", fontsize=11, weight="bold")
+    ax.set_xlabel("how much hotter concrete is than green space (C)")
+    ax.set_title("Urban heat island, compared across cities", fontsize=13)
+    ax.spines[["top", "right"]].set_visible(False)
+    save(fig, out / "0_city_comparison.png")
+    return results
+
+
 def main():
     logging.basicConfig(level=logging.INFO, format="%(message)s")
     settings = load_settings()
 
-    if not settings.cube_path.exists():
-        print(f"No dataset found at {settings.cube_path}")
-        print("Run this first:  python scripts/build_dataset.py")
+    built = [c for c in settings.cities if settings.cube_path(c).exists()]
+    if not built:
+        print("No city data found. Run this first:")
+        print("  python scripts/build_dataset.py")
         return 1
 
-    cube = load_cube(settings.cube_path)
-    out = settings.out_dir / "maps"
-    out.mkdir(parents=True, exist_ok=True)
+    cubes, names = [], []
+    for city in built:
+        cube = load_cube(settings.cube_path(city))
+        out = settings.out_dir / "maps" / city.slug
+        out.mkdir(parents=True, exist_ok=True)
+        print(f"{city.name} -> {out}")
 
-    print("Writing pictures to", out)
-    heat_map(cube, out, settings.city)
-    hot_vs_green(cube, out, settings.city)
-    difference = heat_island_chart(cube, out, settings.city)
-    year_by_year(cube, out, settings.city)
-    averages = temperature_trend(cube, out, settings.city)
+        heat_map(cube, out, city.name)
+        hot_vs_green(cube, out, city.name)
+        heat_island_chart(cube, out, city.name)
+        year_by_year(cube, out, city.name)
+        temperature_trend(cube, out, city.name)
+        cubes.append(cube)
+        names.append(city.name)
 
-    years = [int(y) for y in cube["year"].values]
+    differences = city_comparison(cubes, names, settings.out_dir / "maps")
+
     print()
     print("  NUMBERS YOU CAN QUOTE")
-    print(f"    Study area      {settings.city}, {years[0]}-{years[-1]}, March-May")
-    print(f"    Resolution      {settings.resolution} m per pixel, "
-          f"{cube.sizes['y']} x {cube.sizes['x']} pixels")
-    print(f"    Heat island     concrete is {difference:.1f} C hotter than green space")
-    print(f"    Hottest year    {years[int(np.argmax(averages))]} "
-          f"({max(averages):.1f} C average)")
-    print(f"    Coolest year    {years[int(np.argmin(averages))]} "
-          f"({min(averages):.1f} C average)")
+    print(f"    Cities          {', '.join(names)}")
+    print(f"    Study area      {settings.radius_summary()}")
+    print(f"    Period          {settings.start_year}-{settings.end_year}, March-May")
+    print()
+    print("    Urban heat island (concrete vs green space):")
+    for city in sorted(differences, key=differences.get, reverse=True):
+        print(f"      {city:<12} {differences[city]:+.1f} C")
     return 0
 
 

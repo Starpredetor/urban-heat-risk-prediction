@@ -33,6 +33,31 @@ LANDSAT = {
     "platforms": ["landsat-8", "landsat-9"],
 }
 
+# The same archive also holds Landsat 5 and 7, which reach back to the 1980s.
+# They use the SAME names for every optical band, but call the thermal band
+# "lwir" instead of "lwir11", so they need their own entry. Two warnings if you
+# use them:
+#   - Landsat 7 has diagonal stripes of missing data in every image since a
+#     2003 hardware failure (about 22% of each scene). Averaging several images
+#     mostly fills them, because the stripes land in different places each pass.
+#   - Older cameras are slightly differently tuned, so NDVI from Landsat 5 and
+#     Landsat 8 differ by roughly 0.02-0.04 for the same unchanged field. A
+#     jump in a graph at 2013 may be the satellite changing, not the city.
+LANDSAT_OLD = {
+    **{k: v for k, v in LANDSAT.items() if k not in ("bands", "platforms", "first_year")},
+    "bands": {**LANDSAT["bands"], "thermal": "lwir"},
+    "platforms": ["landsat-4", "landsat-5", "landsat-7"],
+    "first_year": 1988,
+}
+
+# Landsat 8 arrived in 2013. Before that we have to use the older satellites.
+FIRST_MODERN_LANDSAT_YEAR = 2013
+
+
+def landsat_for(year: int) -> dict:
+    """Pick the right Landsat definition for a given year."""
+    return LANDSAT if year >= FIRST_MODERN_LANDSAT_YEAR else LANDSAT_OLD
+
 SENTINEL2 = {
     "name": "sentinel2",
     "collection": "sentinel-2-l2a",

@@ -62,7 +62,7 @@ def train_model(train_set, val_set, settings, device) -> HeatForecaster:
     torch.manual_seed(settings.seed)
     np.random.seed(settings.seed)
 
-    model = HeatForecaster(n_layers=train_set.data.shape[1]).to(device)
+    model = HeatForecaster(n_layers=train_set.data[0].shape[1]).to(device)
     optimiser = torch.optim.AdamW(model.parameters(), lr=settings.learning_rate)
 
     train_loader = DataLoader(train_set, batch_size=settings.batch_size, shuffle=True)
@@ -132,20 +132,25 @@ def straight_line_baseline(dataset, degrees) -> dict:
     return score(np.array(guesses), np.array(answers), degrees)
 
 
-def run(cube, settings, out_dir) -> dict:
-    """Train, test, compare against both baselines, and save everything."""
+def run(cubes, settings, out_dir) -> dict:
+    """Train on every city pooled, test, compare to baselines, save everything."""
     from uhrm.dataset import Scaler
 
     device = pick_device()
-    log.info("training on: %s", "NVIDIA GPU" if device == "cuda" else "processor (no GPU found)")
+    log.info("PyTorch %s | CUDA available: %s", torch.__version__, torch.cuda.is_available())
+    if device == "cuda":
+        log.info("training on: %s", torch.cuda.get_device_name(0))
+    else:
+        log.info("training on: processor (no NVIDIA GPU found)")
+    log.info("cities pooled: %s", ", ".join(str(c.attrs["city"]) for c in cubes))
 
     n_train_years = settings.years.index(max(settings.years_of("train"))) + 1
-    scaler = Scaler.fit(cube["data"].values, n_train_years)
+    scaler = Scaler.fit(cubes, n_train_years)
 
-    sets = {name: HeatPatches(cube, settings, name, scaler)
+    sets = {name: HeatPatches(cubes, settings, name, scaler)
             for name in ("train", "val", "test")}
     for name, ds in sets.items():
-        log.info("%-5s : %4d examples, predicting years %s", name, len(ds), ds.target_years)
+        log.info("%-5s : %6d examples, predicting years %s", name, len(ds), ds.target_years)
 
     model = train_model(sets["train"], sets["val"], settings, device)
 
