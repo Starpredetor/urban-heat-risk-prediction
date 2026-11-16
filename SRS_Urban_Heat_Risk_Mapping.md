@@ -230,8 +230,8 @@ UHRM is an offline research pipeline plus a lightweight dashboard. All heavy com
 | Landsat 8 / 9 C2 L2 | `LANDSAT/LC08/C02/T1_L2`, `LANDSAT/LC09/C02/T1_L2` |
 | WorldCover 2020 / 2021 | `ESA/WorldCover/v100`, `ESA/WorldCover/v200` |
 | ERA5-Land | `ECMWF/ERA5_LAND/HOURLY` (or a daily-aggregated product) |
-| Terrain | `COPERNICUS/DEM/GLO30` |
-| MODIS-cadence vegetation | to be selected (OI-2) |
+| Terrain (SRTM; a single image, so it averages cleanly onto the grid) | `USGS/SRTMGL1_003` |
+| MODIS 8-day reflectance (NDVI, NDBI, NDWI at MODIS cadence) | `MODIS/061/MOD09A1` |
 
 Planetary Computer (existing code) remains a fallback for Landsat, and NASA Earthdata and the Copernicus CDS remain fallbacks for MODIS and ERA5-Land. Stage B reads only the exported files and does not require Earth Engine. Prototype boundaries come from open sources via GeoPandas; final boundaries are prepared in QGIS.
 
@@ -290,7 +290,7 @@ Python libraries for raster, vector, ML and visualisation work (Appendix B); QGI
 - **FR-P2.2** Retrieve Landsat 8/9 Collection 2 Level-2 scenes (ST, SR, QA_PIXEL) for 2013 to the latest year, restricted to selected years and to March-May for the main seasonal comparison.
 - **FR-P2.3** Retrieve ESA WorldCover tiles for 2020 and 2021 covering the model domain.
 - **FR-P2.4** Retrieve ERA5-Land hourly variables for the domain for 2001 to the latest year: air temperature, humidity-related variables (for example dewpoint), 10 m wind components, and optionally soil or skin temperature.
-- **FR-P2.5** Retrieve terrain (elevation) data and a vegetation or reflectance product at MODIS cadence, as decided in OI-2.
+- **FR-P2.5** Retrieve terrain (SRTM elevation) and MODIS MOD09A1 8-day surface reflectance with its state-QA band. MOD09A1 gives NDVI, NDBI and NDWI at the MODIS cadence from 2001 onward (OI-2 resolved). It is fetched raw at 500 m and aggregated to 1 km in Phase 3 with a validity mask.
 - **FR-P2.6** Raw downloads shall be stored separately from processed files and never modified.
 - **FR-P2.7** The system shall maintain a CSV catalogue with dataset name, date, city or domain, source, file path, and checksum.
 - **FR-P2.8** Downloads shall be resumable, retry up to 3 times with exponential backoff, and log failures without stopping.
@@ -329,7 +329,7 @@ Python libraries for raster, vector, ML and visualisation work (Appendix B); QGI
 - **FR-P4.4** Aggregate ERA5-Land variables to the same 8-day windows as MODIS, resample to the model grid, and document the aggregation (for example mean of daytime hours near the Terra overpass). Coarse weather shall not be presented as fine-scale measurement.
 - **FR-P4.5** Encode time of year with cyclical features (for example sine and cosine of day of year).
 - **FR-P4.6** Save the feature stack with a channel manifest listing, per channel, name, unit, source, native resolution, temporal cadence, and aggregation method.
-- **FR-P4.7** For sequences spanning 2001-2025, vegetation inputs shall come from a MODIS-cadence product (OI-2). Landsat indices (2013 onward) are used for detailed analysis and for any 2013-onward experiment, not for the full-history model. WorldCover fractions are time-invariant channels and shall be labelled as such.
+- **FR-P4.7** For sequences spanning 2001-2025, vegetation, built-up and water inputs shall come from NDVI, NDBI and NDWI derived from MOD09A1 (OI-2 resolved). Landsat indices (2013 onward) are used for detailed analysis and for any 2013-onward experiment, not for the full-history model. WorldCover fractions are time-invariant channels and shall be labelled as such.
 
 **Outputs:** feature stacks per city and period.
 **Completion:** channel manifest complete; a spot check of each channel against its source for one date.
@@ -506,7 +506,7 @@ Python libraries for raster, vector, ML and visualisation work (Appendix B); QGI
 | Dataset | Resolution | Cadence / period | Use | Phase |
 |---|---|---|---|---|
 | MODIS MOD11A2 v6.1 (day LST, QC) | 1 km | 8-day, 2001-latest | Primary prediction series | 2, 3 |
-| MODIS-cadence vegetation product (OI-2) | 500 m-1 km | 8- or 16-day, 2001-latest | Time-varying vegetation channel | 2, 4 |
+| MODIS MOD09A1 surface reflectance | 500 m | 8-day, 2001-latest | Time-varying NDVI, NDBI, NDWI channels | 2, 4 |
 | Landsat 8/9 C2 L2 (ST, SR) | 30 m grid (thermal 100 m native) | 16-day, 2013-latest, selected years, Mar-May | Detailed LST maps, NDVI/NDBI/NDWI | 2, 4, 5 |
 | ESA WorldCover | 10 m | 2020, 2021 (static) | Land-cover fractions | 2, 4 |
 | ERA5-Land | about 9 km | hourly, 2001-latest | Weather channels | 2, 4 |
@@ -665,7 +665,7 @@ Unit and integration tests run offline. A synthetic series with a known pattern 
 | ID | Item | Resolves with |
 |---|---|---|
 | OI-1 | Which Navi Mumbai boundary (municipal corporation versus planning authority) and which source | Phase 1 |
-| OI-2 | Source of a vegetation channel at MODIS cadence for 2001-2025 (for example a 16-day 1 km vegetation product or an 8-day reflectance product) | Phase 2 |
+| OI-2 | **Resolved:** MODIS MOD09A1 (8-day, 500 m reflectance) supplies NDVI, NDBI and NDWI at MODIS cadence for 2001-2025. Remaining: confirm its cloud screening (StateQA bits) in Phase 3 | Phase 3 |
 | OI-3 | Model-domain buffer size and patch size given the cell counts | Phase 1 |
 | OI-4 | Final end year of the historical series | Phase 2 |
 | OI-5 | Numeric RMSE target for NFR-2.1 | After Phase 6 |
