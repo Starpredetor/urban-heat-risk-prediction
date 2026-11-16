@@ -96,6 +96,22 @@ def refined(grid: Grid, factor: int) -> Grid:
                 width=grid.width * factor, height=grid.height * factor)
 
 
+def tiles(grid: Grid, size: int):
+    """Split `grid` into sub-grids of at most size x size cells.
+
+    Yields (row0, col0, sub_grid); sub_grid's cells are exactly
+    grid[row0:row0+h, col0:col0+w], so results can be stitched back by slicing.
+    Used when one request for the whole grid is too large for the server.
+    """
+    if size < 1:
+        raise ValueError("size must be >= 1")
+    for row0 in range(0, grid.height, size):
+        for col0 in range(0, grid.width, size):
+            yield row0, col0, Grid(
+                crs=grid.crs, xmin=grid.xmin + col0 * grid.res, ymax=grid.ymax - row0 * grid.res,
+                res=grid.res, width=min(size, grid.width - col0), height=min(size, grid.height - row0))
+
+
 def save_grid(grid: Grid, path) -> Path:
     path = Path(path)
     path.parent.mkdir(parents=True, exist_ok=True)

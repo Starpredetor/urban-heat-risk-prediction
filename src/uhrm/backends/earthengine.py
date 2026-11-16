@@ -23,7 +23,7 @@ from datetime import date, datetime, timedelta, timezone
 import numpy as np
 
 from uhrm.backends.base import ModisComposite, RasterSet
-from uhrm.regions import Grid
+from uhrm.regions import Grid, tiles
 
 
 class _EarthEngine:
@@ -141,6 +141,8 @@ class EarthEngineEra5Land(_EarthEngine):
 class EarthEngineWorldCover(_EarthEngine):
     """Land-cover area fraction of each class inside each grid cell (static)."""
 
+    TILE_CELLS = 20   # 20 km tiles at 1 km: ~2000 x 2000 native 10 m pixels per request
+
     def __init__(self, versions: dict[int, str], classes: tuple[int, ...]):
         super().__init__()
         self.versions, self.classes = dict(versions), tuple(classes)
@@ -152,19 +154,19 @@ class EarthEngineWorldCover(_EarthEngine):
         asset = self.versions[year]
         land = ee.ImageCollection(asset).first().select("Map")
         stack = ee.Image.cat([land.eq(c).rename(f"c{c}") for c in self.classes]).toFloat()
-        # Averaging 10 m straight to 1 km makes Earth Engine materialise the whole
-        # domain at 10 m ("Reprojection output too large"). Two steps keep each
-        # request small: 10 m -> 100 m (100 pixels per cell), then 100 m -> grid.
-        # Equal-area steps, so the result equals the direct mean.
-        step = 100.0
-        mid = Grid(crs=grid.crs, xmin=grid.xmin, ymax=grid.ymax, res=step,
-                   width=int(round(grid.width * grid.res / step)),
-                   height=int(round(grid.height * grid.res / step)))
-        frac = (stack.reduceResolution(reducer=ee.Reducer.mean(), maxPixels=1024)
-                .reproject(crs=grid.crs, crsTransform=self._transform(mid))
-                .reduceResolution(reducer=ee.Reducer.mean(), maxPixels=1024)
-                .reproject(crs=grid.crs, crsTransform=self._transform(grid)))
-        px = self._pixels(frac, grid, [f"c{c}" for c in self.classes])
+        names = [f"c{c}" for c in self.classes]
+        # Averaging 10 m pixels makes Earth Engine materialise the requested area
+        # at 10 m; the whole domain (~8000 x 9000 px) exceeds its limit
+        # ("Reprojection output too large"). So request tiles of TILE_CELLS x
+        # TILE_CELLS cells (~2000 x 2000 px at 10 m) and stitch them.
+        px = {n: np.full(grid.shape, np.nan) for n in names}
+        for row0, col0, sub in tiles(grid, self.TILE_CELLS):
+            # Each 1 km cell holds (1000/10)^2 = 10,000 ten-metre pixels.
+            frac = stack.reduceResolution(reducer=ee.Reducer.mean(), maxPixels=16384).reproject(
+                crs=sub.crs, crsTransform=self._transform(sub))
+            part = self._pixels(frac, sub, names)
+            for n in names:
+                px[n][row0:row0 + sub.height, col0:col0 + sub.width] = part[n]
         return RasterSet(bands=px, source=f"earthengine:{asset}",
                          meta={"collection": asset, "year": year, "grid_res_m": grid.res})
 

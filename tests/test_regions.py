@@ -7,7 +7,7 @@ import numpy as np
 import pytest
 from shapely.geometry import Polygon, box
 
-from uhrm.regions import Grid, approx_area_km2, cell_report, load_grid, refined, repair, save_grid
+from uhrm.regions import Grid, approx_area_km2, cell_report, load_grid, refined, repair, save_grid, tiles
 
 GRID = Grid(crs="EPSG:32643", xmin=1000.0, ymax=5000.0, res=1000.0, width=3, height=3)
 
@@ -83,6 +83,26 @@ def test_refined_grid_nests_exactly_in_the_coarse_grid():
     assert (fine.xmin, fine.ymax) == (GRID.xmin, GRID.ymax)
     with pytest.raises(ValueError):
         refined(GRID, 0)
+
+
+def test_tiles_cover_the_grid_exactly_once_and_stitch_back():
+    big = Grid(crs="EPSG:32643", xmin=0.0, ymax=7000.0, res=1000.0, width=5, height=7)
+    covered = np.zeros(big.shape, dtype=int)
+    for row0, col0, sub in tiles(big, 3):
+        covered[row0:row0 + sub.height, col0:col0 + sub.width] += 1
+        # the sub-grid's geometry matches the slice it stands for
+        assert sub.res == big.res
+        assert sub.xmin == big.xmin + col0 * big.res and sub.ymax == big.ymax - row0 * big.res
+        assert sub.height <= 3 and sub.width <= 3
+    assert (covered == 1).all()
+    # same cell boxes, so per-cell results stitched from tiles equal the whole-grid result
+    poly = box(500, 1500, 4200, 6100)
+    stitched = np.zeros(big.shape, dtype=np.float32)
+    for row0, col0, sub in tiles(big, 3):
+        stitched[row0:row0 + sub.height, col0:col0 + sub.width] = sub.overlap_fraction(poly)
+    np.testing.assert_allclose(stitched, big.overlap_fraction(poly), atol=1e-6)
+    with pytest.raises(ValueError):
+        list(tiles(big, 0))
 
 
 def test_grid_json_round_trip(tmp_path):
