@@ -7,7 +7,7 @@ import numpy as np
 import pytest
 from shapely.geometry import Polygon, box
 
-from uhrm.regions import Grid, approx_area_km2, cell_report, load_grid, repair, save_grid
+from uhrm.regions import Grid, approx_area_km2, cell_report, load_grid, refined, repair, save_grid
 
 GRID = Grid(crs="EPSG:32643", xmin=1000.0, ymax=5000.0, res=1000.0, width=3, height=3)
 
@@ -74,6 +74,15 @@ def test_cell_report_counts_and_flags_overlap():
 
     c = GRID.cell_mask(box(2000, 3000, 3000, 4000))   # inside a's area
     assert cell_report(GRID, {"a": a, "c": c})["overlap_between_cities"]["a&c"] == 1
+
+
+def test_refined_grid_nests_exactly_in_the_coarse_grid():
+    fine = refined(GRID, 2)
+    assert fine.shape == (6, 6) and fine.res == 500.0
+    assert fine.bounds == GRID.bounds                      # same extent
+    assert (fine.xmin, fine.ymax) == (GRID.xmin, GRID.ymax)
+    with pytest.raises(ValueError):
+        refined(GRID, 0)
 
 
 def test_grid_json_round_trip(tmp_path):

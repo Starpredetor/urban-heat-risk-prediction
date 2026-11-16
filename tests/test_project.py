@@ -61,6 +61,30 @@ def test_check_rejects_milestone_date_outside_range():
         check(replace(p, modis=replace(p.modis, first_milestone_date=date(1999, 1, 1))))
 
 
+def test_phase2_datasets_are_configured():
+    d = load_project("offline").datasets
+    assert d.reflectance.collection == "MODIS/061/MOD09A1" and d.reflectance.grid_refinement == 2
+    assert "StateQA" in d.reflectance.bands
+    assert d.era5_land.hours_utc == (5, 6) and "temperature_2m" in d.era5_land.bands
+    assert sorted(d.worldcover.versions) == [2020, 2021]            # integer keys
+    assert d.worldcover.classes[0] == 10 and len(d.worldcover.classes) == 11
+    assert d.terrain.asset == "USGS/SRTMGL1_003"
+
+
+def test_check_rejects_non_consecutive_era5_hours():
+    p = load_project("offline")
+    bad = replace(p, datasets=replace(p.datasets, era5_land=replace(p.datasets.era5_land, hours_utc=(5, 7))))
+    with pytest.raises(ValueError, match="consecutive"):
+        check(bad)
+
+
+def test_check_rejects_zero_grid_refinement():
+    p = load_project("offline")
+    bad = replace(p, datasets=replace(p.datasets, reflectance=replace(p.datasets.reflectance, grid_refinement=0)))
+    with pytest.raises(ValueError, match="grid_refinement"):
+        check(bad)
+
+
 def test_check_rejects_bad_overlap_threshold():
     p = load_project("offline")
     with pytest.raises(ValueError, match="min_cell_overlap"):
