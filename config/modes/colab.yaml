@@ -1,0 +1,6 @@
+# Stage A: prototype in Google Colab (SRS FR-X.2).
+backend: earthengine
+# Google Drive path; survives Colab session resets.
+storage_root: /content/drive/MyDrive/uhrm_data
+# Earth Engine Cloud project id. Leave null to read the Colab secret EE_PROJECT.
+ee_project: null

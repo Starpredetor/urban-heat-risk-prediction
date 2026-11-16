@@ -1,0 +1,39 @@
+# ============================================================
+#  UHRM v2 project configuration (SRS v2.1)
+#  Study areas, grids and data choices. Where it runs (Colab or
+#  offline) is chosen by a mode file in config/modes/.
+# ============================================================
+
+# --- Study areas (FR-P1.1) --------------------------------------------------
+# Boundary paths are relative to the mode's storage_root.
+# Stage A boundaries are provisional (OpenStreetMap); Stage B replaces them
+# with authoritative boundaries verified in QGIS (FR-P1.8, OI-1).
+study_areas:
+  - {name: Mumbai,      slug: mumbai,      boundary: boundaries/mumbai.geojson}
+  - {name: Navi Mumbai, slug: navi_mumbai, boundary: boundaries/navi_mumbai.geojson}
+
+# --- Grids (FR-P1.4 to FR-P1.6) ---------------------------------------------
+# UTM 43N covers both cities. The model domain is the bounding box of both
+# cities plus a buffer, so 64 x 64 patches fit (at 1 km a city is only
+# hundreds of cells). City polygons stay the masks for all metrics.
+grid:
+  crs: EPSG:32643
+  model_resolution_m: 1000
+  domain_buffer_km: 20        # OI-3: revisit once cell counts are known
+  min_cell_overlap: 0.5       # a cell belongs to a city if >= 50% inside its polygon
+
+# --- MODIS MOD11A2 (FR-P2.1, FR-P3.1) ---------------------------------------
+modis:
+  collection: MODIS/061/MOD11A2     # Earth Engine id; verify at implementation
+  start_date: 2001-01-01
+  end_date: 2025-12-31              # OI-4: confirm the last complete year
+  first_milestone_date: 2024-04-01  # one pre-monsoon date for the first map
+  scale: 0.02                       # kelvin per digital number
+  qc:
+    # QC_Day bits 0-1 = 0 means "LST produced, good quality".
+    require_good_mandatory_qa: true
+    # QC_Day bits 6-7: 0 <=1 K, 1 <=2 K, 2 <=3 K, 3 >3 K average LST error.
+    max_lst_error_class: 1
+    # Bits 2-5 are deliberately not used: documentation sources disagree.
+    valid_dn_range: [7500, 65535]
+    plausible_celsius: [0.0, 75.0]

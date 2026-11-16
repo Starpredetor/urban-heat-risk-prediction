@@ -1,0 +1,16 @@
+# Dependencies for the Colab prototype stage (SRS FR-X.9, OI-10).
+#
+# Deliberately UNPINNED and without numpy/torch: Colab ships its own builds,
+# and pinning them (as pyproject.toml does for the offline environment) can
+# break the runtime. Library versions are logged per run instead.
+#
+# On Colab the repository is used through sys.path, not `pip install -e .`,
+# because pyproject.toml pins Python 3.12 and exact versions.
+
+earthengine-api
+shapely>=2.0
+pyproj
+rasterio
+pyyaml
+requests
+matplotlib
