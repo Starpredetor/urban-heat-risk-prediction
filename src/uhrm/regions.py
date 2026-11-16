@@ -84,6 +84,18 @@ class Grid:
         return self.overlap_fraction(geom) >= min_overlap
 
 
+def refined(grid: Grid, factor: int) -> Grid:
+    """The same extent at `factor` times the resolution (cells nest exactly).
+
+    Used for 500 m MODIS reflectance on the 1 km model grid: raw data is kept at
+    its finer resolution and aggregated later with a validity mask.
+    """
+    if factor < 1:
+        raise ValueError("factor must be >= 1")
+    return Grid(crs=grid.crs, xmin=grid.xmin, ymax=grid.ymax, res=grid.res / factor,
+                width=grid.width * factor, height=grid.height * factor)
+
+
 def save_grid(grid: Grid, path) -> Path:
     path = Path(path)
     path.parent.mkdir(parents=True, exist_ok=True)

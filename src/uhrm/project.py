@@ -46,6 +46,39 @@ class ModisConfig:
 
 
 @dataclass(frozen=True)
+class ReflectanceConfig:
+    collection: str
+    bands: tuple[str, ...]
+    grid_refinement: int
+
+
+@dataclass(frozen=True)
+class Era5Config:
+    collection: str
+    bands: tuple[str, ...]
+    hours_utc: tuple[int, ...]
+
+
+@dataclass(frozen=True)
+class WorldCoverConfig:
+    versions: dict[int, str]          # release year -> Earth Engine asset
+    classes: tuple[int, ...]
+
+
+@dataclass(frozen=True)
+class TerrainConfig:
+    asset: str
+
+
+@dataclass(frozen=True)
+class DatasetsConfig:
+    reflectance: ReflectanceConfig
+    era5_land: Era5Config
+    worldcover: WorldCoverConfig
+    terrain: TerrainConfig
+
+
+@dataclass(frozen=True)
 class Mode:
     name: str
     backend: str
@@ -58,6 +91,7 @@ class Project:
     study_areas: list[StudyArea]
     grid: GridConfig
     modis: ModisConfig
+    datasets: DatasetsConfig
     mode: Mode
 
     def path(self, *parts: str) -> Path:
@@ -81,6 +115,19 @@ def _as_date(value, name: str) -> date:
         return date.fromisoformat(str(value))
     except ValueError as e:
         raise ValueError(f"{name}: {value!r} is not a date (YYYY-MM-DD)") from e
+
+
+def _datasets(d: dict) -> DatasetsConfig:
+    r, e, w, t = d["reflectance"], d["era5_land"], d["worldcover"], d["terrain"]
+    return DatasetsConfig(
+        reflectance=ReflectanceConfig(collection=r["collection"], bands=tuple(r["bands"]),
+                                      grid_refinement=int(r["grid_refinement"])),
+        era5_land=Era5Config(collection=e["collection"], bands=tuple(e["bands"]),
+                             hours_utc=tuple(int(h) for h in e["hours_utc"])),
+        worldcover=WorldCoverConfig(versions={int(k): v for k, v in w["versions"].items()},
+                                    classes=tuple(int(c) for c in w["classes"])),
+        terrain=TerrainConfig(asset=t["asset"]),
+    )
 
 
 def _storage_root(value: str) -> Path:
@@ -121,6 +168,7 @@ def load_project(mode: str = "offline", *, config_path=None, storage_root=None) 
                       max_lst_error_class=int(q["max_lst_error_class"]),
                       valid_dn_range=tuple(q["valid_dn_range"]),
                       plausible_celsius=tuple(q["plausible_celsius"]))),
+        datasets=_datasets(raw["datasets"]),
         mode=Mode(name=mode, backend=mode_raw["backend"],
                   storage_root=Path(storage_root) if storage_root else _storage_root(mode_raw["storage_root"]),
                   ee_project=mode_raw.get("ee_project")),
@@ -148,3 +196,15 @@ def check(p: Project) -> None:
         raise ValueError("grid.min_cell_overlap must be in (0, 1]")
     if abs(p.modis.scale - 0.02) > 1e-9:
         raise ValueError("MOD11A2 scale factor is 0.02 K per DN; refusing to run with another value")
+
+    d = p.datasets
+    if d.reflectance.grid_refinement < 1:
+        raise ValueError("reflectance.grid_refinement must be >= 1")
+    if not d.reflectance.bands or not d.era5_land.bands:
+        raise ValueError("reflectance and era5_land need at least one band")
+    hours = d.era5_land.hours_utc
+    if (not hours or any(not 0 <= h <= 23 for h in hours)
+            or list(hours) != list(range(min(hours), max(hours) + 1))):
+        raise ValueError("era5_land.hours_utc must be consecutive hours within 0..23")
+    if not d.worldcover.versions or not d.worldcover.classes:
+        raise ValueError("worldcover needs at least one release and one class")
