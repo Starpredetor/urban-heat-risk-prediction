@@ -30,6 +30,23 @@ class ModisComposite:
             raise ValueError("lst_dn and qc must have the same shape")
 
 
+@dataclass
+class RasterSet:
+    """Several named 2-D bands on one grid: a raw reflectance composite, an
+    ERA5-Land window, WorldCover fractions, terrain. Values are stored as
+    fetched; any masking or scaling happens in Phase 3."""
+
+    bands: dict[str, np.ndarray]
+    source: str
+    date: date | None = None
+    meta: dict = field(default_factory=dict)
+
+    def __post_init__(self):
+        shapes = {b.shape for b in self.bands.values()}
+        if not self.bands or len(shapes) != 1:
+            raise ValueError("a RasterSet needs at least one band and all bands the same shape")
+
+
 class ModisBackend(Protocol):
     def list_composites(self, start: date, end: date) -> list[date]:
         """Composite start dates available in [start, end)."""
