@@ -37,3 +37,32 @@ modis:
     # Bits 2-5 are deliberately not used: documentation sources disagree.
     valid_dn_range: [7500, 65535]
     plausible_celsius: [0.0, 75.0]
+
+# --- Other Phase 2 datasets (FR-P2.2 to FR-P2.5) -----------------------------
+datasets:
+  # MOD09A1: 8-day 500 m surface reflectance, same cadence as MOD11A2. Gives
+  # NDVI/NDBI/NDWI for the full 2001-2025 series (resolves OI-2). Fetched raw on
+  # a grid refined 2x (500 m) and aggregated to 1 km later with a validity mask.
+  reflectance:
+    collection: MODIS/061/MOD09A1
+    # b01 red, b02 NIR, b04 green, b06 SWIR1; StateQA for cloud screening in Phase 3.
+    bands: [sur_refl_b01, sur_refl_b02, sur_refl_b04, sur_refl_b06, StateQA]
+    grid_refinement: 2
+
+  # ERA5-Land hourly, averaged per MODIS 8-day window over these UTC hours.
+  # Terra passes at 10:30 local solar time (about 05:40 UTC over Mumbai), so
+  # hours 5 and 6 bracket the overpass. About 9 km native: regional context only.
+  era5_land:
+    collection: ECMWF/ERA5_LAND/HOURLY
+    bands: [temperature_2m, dewpoint_temperature_2m, u_component_of_wind_10m,
+            v_component_of_wind_10m, skin_temperature]
+    hours_utc: [5, 6]
+
+  # Land-cover area fractions per 1 km cell (static: 2020 and 2021 releases).
+  worldcover:
+    versions: {2020: ESA/WorldCover/v100, 2021: ESA/WorldCover/v200}
+    classes: [10, 20, 30, 40, 50, 60, 70, 80, 90, 95, 100]
+
+  # Elevation mean and relief (std) per 1 km cell.
+  terrain:
+    asset: USGS/SRTMGL1_003
