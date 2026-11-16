@@ -152,9 +152,18 @@ class EarthEngineWorldCover(_EarthEngine):
         asset = self.versions[year]
         land = ee.ImageCollection(asset).first().select("Map")
         stack = ee.Image.cat([land.eq(c).rename(f"c{c}") for c in self.classes]).toFloat()
-        # Each 1 km cell holds (1000/10)^2 = 10,000 ten-metre pixels.
-        frac = stack.reduceResolution(reducer=ee.Reducer.mean(), maxPixels=16384).reproject(
-            crs=grid.crs, crsTransform=self._transform(grid))
+        # Averaging 10 m straight to 1 km makes Earth Engine materialise the whole
+        # domain at 10 m ("Reprojection output too large"). Two steps keep each
+        # request small: 10 m -> 100 m (100 pixels per cell), then 100 m -> grid.
+        # Equal-area steps, so the result equals the direct mean.
+        step = 100.0
+        mid = Grid(crs=grid.crs, xmin=grid.xmin, ymax=grid.ymax, res=step,
+                   width=int(round(grid.width * grid.res / step)),
+                   height=int(round(grid.height * grid.res / step)))
+        frac = (stack.reduceResolution(reducer=ee.Reducer.mean(), maxPixels=1024)
+                .reproject(crs=grid.crs, crsTransform=self._transform(mid))
+                .reduceResolution(reducer=ee.Reducer.mean(), maxPixels=1024)
+                .reproject(crs=grid.crs, crsTransform=self._transform(grid)))
         px = self._pixels(frac, grid, [f"c{c}" for c in self.classes])
         return RasterSet(bands=px, source=f"earthengine:{asset}",
                          meta={"collection": asset, "year": year, "grid_res_m": grid.res})
