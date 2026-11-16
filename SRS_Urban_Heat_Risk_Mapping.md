@@ -2,7 +2,7 @@
 
 ## Urban Heat Island Analysis and Spatiotemporal Prediction Using Multi-Source Satellite Data and Deep Learning: A Comparative Study of Mumbai and Navi Mumbai
 
-**Version:** 2.0 (Finalized, phase-wise)
+**Version:** 2.1 (Finalized, phase-wise, Colab-first)
 **Date:** 16 November 2026
 **Prepared by:** Shubham Yedve (project team)
 **Institution:** Ramrao Adik Institute of Technology (D.Y. Patil University), Navi Mumbai
@@ -15,6 +15,7 @@
 | 1.0 | 31 Aug 2026 | Initial SRS: heat-risk mapping for one metropolitan area. |
 | 1.1 | 9 Nov 2026 | Aligned with the built Landsat + Sentinel-2 pipeline; added LST anomaly target, land-cover classification, foundation-model comparison, remote GPU training. |
 | 2.0 | 16 Nov 2026 | **Project redefined** as a two-region (Mumbai, Navi Mumbai) spatiotemporal urban heat analysis and prediction system. MODIS MOD11A2 becomes the primary prediction dataset; Landsat is used for detailed analysis. Requirements are organised by twelve delivery phases. Future prediction is a core objective. The risk index, land-cover classifier, foundation-model comparison and web-API stack are removed from scope. See Appendix C. |
+| 2.1 | 16 Nov 2026 | **Two execution stages.** Stage A prototypes in Google Colab with data pulled through Google Earth Engine and stored on Drive; a freeze gate (G1) exports and catalogues all data as files; Stage B finalises offline (authoritative GIS boundaries and mapping in QGIS, additional data, ConvLSTM fine-tuning, dashboard, validation). Added cross-cutting requirements FR-X.1 to FR-X.9. See Appendix F. |
 
 ---
 
@@ -109,6 +110,30 @@ Requirements in Section 4 are organised by the twelve phases below. Each phase p
 
 **First milestone (gate before bulk download):** one correct MODIS LST map for Mumbai and one for Navi Mumbai, from a single observation date, quality-filtered, scaled, clipped, and checked in QGIS (Phases 1-3 in miniature).
 
+### 1.8 Execution Stages
+
+The work runs in two stages so that prototyping is fast and the final results are reproducible offline.
+
+| Stage | Weeks | Where | Purpose |
+|---|---|---|---|
+| **A: Prototype** | 1-11 | Google Colab; data via Google Earth Engine; storage on Google Drive | Prove the pipeline end to end, get the data and libraries with minimal setup, and learn which model and inputs work (Phases 1-7 at prototype level) |
+| **Gate G1: Prototype freeze** | end of Week 11 | n/a | Export and catalogue all data as files; record prototype results as provisional |
+| **B: Finalisation** | 12-16 | Offline (laptop, QGIS); no Earth Engine dependency | Authoritative boundaries and final GIS mapping, additional data, ConvLSTM fine-tuning, two-city experiments, final predictions, dashboard, validation, documentation |
+
+How each phase splits across the stages:
+
+| Phase | Stage A (Colab prototype) | Stage B (offline final) |
+|---|---|---|
+| 1 Study areas | Provisional boundaries from open sources; grids and model domain | Authoritative boundaries repaired and verified in QGIS; final cell masks |
+| 2 Data | Pull MODIS, Landsat, WorldCover, ERA5-Land through Earth Engine; export to Drive | Add further data if needed; frozen files only |
+| 3-6 Preprocess, features, analysis, baselines | Run on prototype data | Re-run on the frozen dataset and final boundaries |
+| 7 ConvLSTM | Prototype training on a Colab GPU; single seed allowed | Fine-tuning and final multi-seed runs |
+| 8-9 Experiments, predictions | Smoke test only | Full runs and final products |
+| 10-11 Dashboard, validation | n/a | Full |
+| 12 Documentation | Continuous | Continuous; final pack |
+
+**Gate G1 criteria:** (1) the pipeline runs from raw data to a ConvLSTM-versus-baselines evaluation in Colab; (2) Phase 1-6 completion criteria are met on prototype data; (3) open items OI-1, OI-2, OI-3, OI-4 and OI-6 are resolved or consciously deferred; (4) every prototype dataset is exported and catalogued as files (FR-X.4); (5) all logic is in `src/` and notebooks only orchestrate (FR-X.2); (6) prototype results are labelled provisional (FR-X.7).
+
 ---
 
 ## 2. Overall Description
@@ -151,8 +176,9 @@ UHRM is an offline research pipeline plus a lightweight dashboard. All heavy com
 
 ### 2.4 Operating Environment
 
-- Python 3.12 with `uv` and a committed lockfile (existing repository convention). Python 3.13 and 3.14 are unsupported because required geospatial and PyTorch wheels are unavailable.
-- Notebooks and scripts run locally (Windows 11 laptop, RTX 4060 8 GB) or on Google Colab. The MODIS-based dataset is small enough for both. The separate GPU server mentioned in v1.1 is optional and no longer required by any requirement.
+- **Stage A, prototyping: Google Colab** with a GPU runtime. Data is obtained through the Google Earth Engine Python API (one authentication gives access to MODIS, Landsat, WorldCover, ERA5-Land and terrain with server-side clipping) and saved to Google Drive. Colab runtimes are ephemeral: installed packages and local files disappear when a session ends, so every notebook starts with a setup cell that installs pinned dependencies and mounts Drive, and nothing of value lives only on the runtime disk.
+- **Stage B, finalisation: offline.** Windows 11 laptop (RTX 4060, 8 GB) using the repository's Python 3.12 `uv` environment and lockfile, reading the frozen GeoTIFF and NumPy files exported in Stage A, with QGIS for final GIS mapping. The optional GPU server mentioned in v1.1 may be used but no requirement depends on it.
+- The same code in `src/uhrm/` runs in both stages; only configuration differs (FR-X.2). Colab's preinstalled Python and packages may differ from the lockfile, so compatibility is checked in Week 1 (OI-10).
 - QGIS for boundary preparation and visual verification.
 - Dashboard: Streamlit run locally; hosting is optional and not required.
 
@@ -170,6 +196,9 @@ UHRM is an offline research pipeline plus a lightweight dashboard. All heavy com
 - **C10 Account-gated data.** MODIS (NASA Earthdata) and ERA5-Land (Copernicus Climate Data Store) require free accounts and API setup. Credentials are never committed (NFR-6.1).
 - **C11 Terra overpass time.** MOD11A2 is a mid-morning (Terra) product and does not capture the afternoon peak of surface heating. Findings describe mid-morning LST.
 - **C12 Short effective series for urban change.** Annual and seasonal comparisons from Landsat have few years; trends must be reported with their sampling noise.
+- **C13 Ephemeral Colab runtime.** Sessions time out and disconnect, GPU availability and type are not guaranteed, and runtime disk is limited and temporary. Long jobs must checkpoint to Drive and be resumable.
+- **C14 Earth Engine dependency in the prototype stage.** Earth Engine requires a registered Cloud project under its research or non-commercial terms, imposes request and export-task quotas, and its collections can be reprocessed or re-versioned. Therefore prototype data is exported and frozen as files, and no final result may depend on a live query.
+- **C15 Provisional boundaries and data.** Stage A uses boundaries obtained quickly from open sources. Final GIS mapping in Stage B may change which cells belong to each city, so Stage A results are provisional until regenerated.
 
 ### 2.6 Assumptions and Dependencies
 
@@ -193,6 +222,19 @@ UHRM is an offline research pipeline plus a lightweight dashboard. All heavy com
 | Vegetation at MODIS cadence | A MODIS vegetation or reflectance product (OI-2) | NASA Earthdata |
 | Boundaries | Municipal / survey / census / OSM | Free download; provenance recorded |
 
+**Prototype access path (Stage A, Colab).** Where available, each source is first obtained through Google Earth Engine and exported to Drive as GeoTIFF:
+
+| Dataset | Earth Engine collection (verify identifier at implementation) |
+|---|---|
+| MOD11A2 v6.1 | `MODIS/061/MOD11A2` |
+| Landsat 8 / 9 C2 L2 | `LANDSAT/LC08/C02/T1_L2`, `LANDSAT/LC09/C02/T1_L2` |
+| WorldCover 2020 / 2021 | `ESA/WorldCover/v100`, `ESA/WorldCover/v200` |
+| ERA5-Land | `ECMWF/ERA5_LAND/HOURLY` (or a daily-aggregated product) |
+| Terrain | `COPERNICUS/DEM/GLO30` |
+| MODIS-cadence vegetation | to be selected (OI-2) |
+
+Planetary Computer (existing code) remains a fallback for Landsat, and NASA Earthdata and the Copernicus CDS remain fallbacks for MODIS and ERA5-Land. Stage B reads only the exported files and does not require Earth Engine. Prototype boundaries come from open sources via GeoPandas; final boundaries are prepared in QGIS.
+
 ### 3.2 Software Interfaces
 
 Python libraries for raster, vector, ML and visualisation work (Appendix B); QGIS for inspection; a Colab runtime as an optional compute target.
@@ -212,6 +254,18 @@ Python libraries for raster, vector, ML and visualisation work (Appendix B); QGI
 
 ## 4. Functional Requirements by Phase
 
+### 4.0 Execution Stages and Portability (applies to all phases)
+
+- **FR-X.1** Every phase shall have a Colab prototype deliverable and, where Section 1.8 says so, an offline final deliverable. The completion criteria below are first met on prototype data and re-met on frozen data in Stage B for every phase that is re-run.
+- **FR-X.2 One code base, two modes.** All logic shall live in `src/uhrm/` and be installed in Colab from the repository. Notebooks contain orchestration and display only. Paths, data backend (`earthengine`, `planetary_computer`, `local_files`), compute device and storage root shall come from a configuration file with a mode setting (`colab` or `offline`), never hard-coded.
+- **FR-X.3 Interchangeable data backends.** Each source shall be read through a small interface (for example a function returning MODIS LST for a region and date range) with interchangeable backends. Moving from Colab to offline changes the backend, not the callers. A test shall confirm two backends return the same shape and units on a sample.
+- **FR-X.4 Freeze and export.** Every dataset used in Stage A shall be exported to Drive as GeoTIFF with validity masks, and catalogued (FR-P2.7) with export date, collection identifier and version, region, date range, scale, CRS and checksum. The frozen dataset shall be downloadable in one step and verifiable by checksum, so that Stage B and later reruns never depend on a live Earth Engine query.
+- **FR-X.5 Colab session safety.** Notebooks shall begin with a setup cell that installs the pinned requirements, mounts Drive, authenticates, loads the configuration and reports the GPU. Acquisition shall be chunked by date range and skip finished chunks. Training shall checkpoint to Drive (FR-P7.9).
+- **FR-X.6 Secrets.** Earth Engine and other credentials shall use Colab Secrets or interactive authentication, never notebook cells or the repository.
+- **FR-X.7 Provisional results.** Stage A outputs shall be labelled "prototype" in their manifests and directory names. No prototype number may appear in the final report unless regenerated in Stage B.
+- **FR-X.8 Gate G1.** Stage B shall begin only after the Gate G1 criteria of Section 1.8 are met and recorded.
+- **FR-X.9 Dependency compatibility.** A Colab requirements file derived from the lockfile shall be maintained and tested on a fresh Colab runtime. Library versions shall be logged in every run manifest so differences between Colab and offline are visible.
+
 ### 4.1 Phase 1: Define the Study Areas (Weeks 1-2)
 
 **Objective:** consistent geographical boundaries and grids for both regions.
@@ -223,6 +277,7 @@ Python libraries for raster, vector, ML and visualisation work (Appendix B); QGI
 - **FR-P1.5** The system shall define, for the 1 km model grid, a documented rule assigning cells to a city (for example majority overlap with the polygon), and shall flag coastal and water-dominated cells using a land/water fraction.
 - **FR-P1.6** One projected CRS (UTM zone 43N, EPSG:32643, covers both cities) and one set of grid definitions (1 km model grid; 30 m Landsat analysis grid) shall be used by all later phases.
 - **FR-P1.7** The system shall report the number of valid 1 km cells per city after masking.
+- **FR-P1.8** Stage A may use provisional boundaries from open sources (for example OpenStreetMap through GeoPandas). Stage B shall replace them with authoritative boundaries, repaired and verified in QGIS. The pipeline shall take the boundary file as a parameter, so replacing it and re-running regenerates all masks and downstream products.
 
 **Outputs:** `data/boundaries/` files; grid definitions; cell-count report.
 **Completion:** both boundaries display correctly in QGIS; CRS and cell counts documented.
@@ -240,6 +295,8 @@ Python libraries for raster, vector, ML and visualisation work (Appendix B); QGI
 - **FR-P2.7** The system shall maintain a CSV catalogue with dataset name, date, city or domain, source, file path, and checksum.
 - **FR-P2.8** Downloads shall be resumable, retry up to 3 times with exponential backoff, and log failures without stopping.
 - **FR-P2.9** A single-date test download of MOD11A2 shall pass Phase 3 checks before bulk download starts.
+- **FR-P2.10** In Stage A, acquisition shall run through the Earth Engine backend for the model-domain extent and be exported to Drive as GeoTIFF per FR-X.4.
+- **FR-P2.11** In Stage B, additional data (further variables, more Landsat years, other products) may be added through the same interface. Each addition shall be catalogued, shall trigger regeneration of the affected features, and shall produce a new dataset version.
 
 **Outputs:** `data/raw/` tree and catalogue CSV.
 **Completion:** catalogue complete; expected (about 46 per year) versus retrieved MODIS composites reported per year, with gaps listed.
@@ -318,10 +375,11 @@ Python libraries for raster, vector, ML and visualisation work (Appendix B); QGI
 - **FR-P7.3 Sequences.** Build sliding windows over the chronological series. No window may contain an observation later than its target. Windows with too many invalid target pixels are excluded or handled by a masked loss, as documented.
 - **FR-P7.4 Splits.** Chronological: earlier years train, later years validate, the most recent complete years test. Default: 2001-2019 train, 2020-2022 validation, 2023-2025 test, adjusted after the availability check of Phase 2. Configuration loading shall refuse overlapping or misordered splits.
 - **FR-P7.5 Normalisation.** Statistics are computed on training years only and stored with the model.
-- **FR-P7.6 Training.** PyTorch (existing code base). Loss computed only over observed target pixels. Every run records its configuration, seed, dataset manifest, per-epoch metrics, and best checkpoint in a run directory. Each configuration is trained with **at least three seeds**.
+- **FR-P7.6 Training.** PyTorch (existing code base). Loss computed only over observed target pixels. Every run records its configuration, seed, dataset manifest, per-epoch metrics, and best checkpoint in a run directory. Each configuration reported as a final result is trained with **at least three seeds**; Stage A prototype runs may use one.
 - **FR-P7.7 Evaluation.** Report MAE, RMSE and R² on observed pixels, per city, per season, and per horizon; spatial error maps; R² additionally on **LST anomalies** (observation minus seasonal climatology), because absolute-LST R² is inflated by the seasonal cycle; and a skill score SS = 1 − RMSE_model/RMSE_reference against persistence, seasonal climatology and the Random Forest forecast variant.
 - **FR-P7.8** The model shall be compared against Random Forest, persistence and seasonal climatology on identical splits. If it does not beat the simpler methods, that is reported as a finding.
-- **FR-P7.9** Training shall be resumable from a per-epoch checkpoint so a Colab disconnect does not lose a run.
+- **FR-P7.9** Training shall be resumable from a per-epoch checkpoint, written to Drive in Colab, so a disconnect does not lose a run.
+- **FR-P7.10** Stage A establishes a working configuration and the baseline comparison. Stage B fine-tunes on the frozen (and any extended) dataset: hyperparameters are chosen on the validation split only, the test split is evaluated once per final configuration, and final multi-seed runs are executed offline.
 
 **Outputs:** `models/convlstm/`, evaluation tables and error maps.
 **Completion:** a trained model producing future temperature maps, with the full comparison table.
@@ -364,6 +422,7 @@ Python libraries for raster, vector, ML and visualisation work (Appendix B); QGI
 - **FR-P10.3** The user shall be able to select Mumbai or Navi Mumbai, view historical maps, view predicted maps and hotspots, and compare the two cities.
 - **FR-P10.4** Every layer shall carry a plain-language description and its limitations, including the prediction target statement of Section 1.3.
 - **FR-P10.5** Colour schemes shall be perceptually uniform and colour-vision-deficiency safe.
+- **FR-P10.6** The dashboard is built in Stage B and shall read only frozen, offline outputs; it shall not depend on Colab or Earth Engine.
 
 **Outputs:** `dashboard/app.py`.
 **Completion:** all six pages render correct maps, charts and predictions on a clean machine.
@@ -422,11 +481,11 @@ Python libraries for raster, vector, ML and visualisation work (Appendix B); QGI
 
 - **NFR-5.1** Code shall be modular, pinned in a lockfile, and tested. Notebooks call functions in `src/`; logic is not duplicated in notebooks.
 - **NFR-5.2** A new data source or model shall be added by implementing a documented interface, not by editing the pipeline core.
-- **NFR-5.3** The code shall run on Windows and on Colab (Linux).
+- **NFR-5.3** The same code shall run unchanged in Colab (Stage A) and offline on Windows (Stage B), differing only in configuration (FR-X.2). A Linux GPU server is optional.
 
 ### 5.6 Security and Privacy
 
-- **NFR-6.1** Earthdata, Copernicus and any other credentials shall be supplied through environment variables or user configuration files outside the repository, never committed.
+- **NFR-6.1** Earth Engine, Earthdata, Copernicus and any other credentials shall be supplied through Colab Secrets, environment variables or user configuration files outside the repository, never committed or left in notebook outputs.
 - **NFR-6.2** No personal data is collected or stored.
 
 ### 5.7 Ethical and Publication Requirements
@@ -437,7 +496,7 @@ Python libraries for raster, vector, ML and visualisation work (Appendix B); QGI
 
 ### 5.8 Reproducibility
 
-- **NFR-8.1** Every result shall be reproducible from its configuration, seed, dataset catalogue and run directory.
+- **NFR-8.1** Every result shall be reproducible from its configuration, seed, dataset catalogue and run directory. A Stage B result shall be reproducible from the frozen dataset without network access.
 - **NFR-8.2** Comparisons across models shall use the same seeds and splits.
 
 ---
@@ -493,12 +552,13 @@ Python libraries for raster, vector, ML and visualisation work (Appendix B); QGI
 | UC-5 | Reviewer / planner | Explore historical heat | Select city → historical page → maps and trends |
 | UC-6 | Reviewer / planner | View predicted hotspots | Select city → Prediction page → horizon → hotspot map |
 | UC-7 | Reviewer | Inspect model validity | Model Evaluation page → baselines, errors, ablations |
+| UC-8 | Researcher | Move from prototype to offline | Pass Gate G1 → download frozen dataset from Drive → verify checksums → switch configuration to offline → regenerate results |
 
 ---
 
 ## 8. Repository Layout
 
-The target layout follows the plan. Existing directories (`config/`, `scripts/`, `tests/`, `runs/`, `docs/`) are kept; `src/uhrm/` is extended rather than replaced.
+The target layout follows the plan. Existing directories (`config/`, `scripts/`, `tests/`, `runs/`, `docs/`) are kept; `src/uhrm/` is extended rather than replaced. Stage A adds `notebooks/00_colab_setup.ipynb` (install, mount Drive, authenticate, set mode) and `config/modes/colab.yaml` and `offline.yaml`. In Colab, `data/` lives on Google Drive and is downloaded to the laptop for Stage B.
 
 ```
 UrbanHeatPrediction/
@@ -539,9 +599,11 @@ UrbanHeatPrediction/
 | 14 | Dashboard | 10 |
 | 15-16 | Testing, final report, presentation, IP review | 11, 12 |
 
+Stage A (Colab prototype) covers Weeks 1-11 and is closed by Gate G1 at the end of Week 11. Stage B (offline finalisation) covers Weeks 12-16. Phases 8-11 run in Stage B on frozen data; a smoke test of the Phase 8 and 9 code on prototype data is allowed in Stage A.
+
 Phase 12 documentation runs throughout. If data collection or ConvLSTM training overruns, reduce dashboard polish, not validation.
 
-**Milestone gates:** M1 first-milestone maps correct (Week 2) · M2 aligned dataset and feature stack (Week 4) · M3 research baseline analysis (Week 6) · M4 baselines reported (Week 8) · M5 ConvLSTM evaluated against baselines (Week 11) · M6 experiments and predictions done (Week 13) · M7 dashboard working (Week 14) · M8 validated and documented (Week 16).
+**Milestone gates:** M1 first-milestone maps correct (Week 2) · M2 aligned dataset and feature stack (Week 4) · M3 research baseline analysis (Week 6) · M4 baselines reported (Week 8) · M5 ConvLSTM evaluated against baselines and prototype frozen, Gate G1 (Week 11) · M6 experiments and predictions done (Week 13) · M7 dashboard working (Week 14) · M8 validated and documented (Week 16).
 
 ---
 
@@ -581,6 +643,11 @@ Unit and integration tests run offline. A synthetic series with a known pattern 
 | Overclaiming future prediction | High | Target statement (Section 1.3); NFR-2.4; no 2030 claim |
 | IP route conflicts with open-source release (OI-9) | Medium | IP review before any public disclosure |
 | Schedule slips | Medium | Cut dashboard polish before validation |
+| Colab sessions disconnect or time out | Medium | Setup cell, Drive-first storage, chunked acquisition, per-epoch checkpoints (FR-X.5) |
+| Earth Engine terms, quotas or reprocessed collections | Medium | Export and freeze all data (FR-X.4); record collection identifiers and versions; Planetary Computer, Earthdata and CDS as fallbacks |
+| Colab packages conflict with the lockfile | Medium | Tested Colab requirements file; library versions logged per run (FR-X.9, OI-10) |
+| Prototype results change after final boundaries or added data | Medium | Label prototype outputs (FR-X.7); boundary file is a parameter; regenerate in Stage B |
+| Notebook code diverges from the repository | Medium | Logic only in `src/`; backend interface test (FR-X.2, FR-X.3) |
 
 ---
 
@@ -602,10 +669,12 @@ Unit and integration tests run offline. A synthetic series with a known pattern 
 | OI-3 | Model-domain buffer size and patch size given the cell counts | Phase 1 |
 | OI-4 | Final end year of the historical series | Phase 2 |
 | OI-5 | Numeric RMSE target for NFR-2.1 | After Phase 6 |
-| OI-6 | Verified access path for MODIS and ERA5-Land (Earthdata or mirror; CDS) | Week 1 |
+| OI-6 | Confirm Earth Engine access (registered Cloud project, research use) and that every required collection, including the MODIS-cadence vegetation product, is available there; Earthdata and CDS remain fallbacks | Week 1 |
 | OI-7 | Project deadline and calendar start date for the 16 weeks | Team |
-| OI-8 | Compute target: laptop, Colab, or the optional GPU server | Before Phase 7 |
+| OI-8 | Colab tier (free or paid) and whether its GPU limits suffice for Phase 7 | Week 1, before Phase 7 |
 | OI-9 | IP route: open-source release (GPL) versus patent filing | Phase 12 |
+| OI-10 | Compatibility between Colab's Python and packages and the repository's Python 3.12 lockfile (the current pins may not install cleanly on Colab) | Week 1 |
+| OI-11 | Which additional data Stage B will add (more years, variables, MODIS Aqua, more cities) | Gate G1 |
 
 ---
 
@@ -632,7 +701,8 @@ Unit and integration tests run offline. A synthetic series with a known pattern 
 | Deep learning | PyTorch (existing code); ConvLSTM |
 | Dashboard | Streamlit, Folium, Plotly |
 | Storage | GeoTIFF, CSV, NumPy |
-| Compute | Laptop RTX 4060 (8 GB) or Google Colab |
+| Data access (Stage A) | Google Earth Engine Python API, exporting GeoTIFF to Google Drive; Planetary Computer as Landsat fallback |
+| Compute | Stage A: Google Colab GPU runtime, data on Drive. Stage B: laptop RTX 4060 (8 GB), offline |
 
 React, FastAPI, PostGIS, container orchestration, multiple deep-learning architectures and cloud deployment are not needed for the first working version.
 
@@ -663,7 +733,7 @@ The repository contains an Increment 1 pipeline built for the earlier plan. It i
 | Component | Status |
 |---|---|
 | Landsat scaling and QA masking (`src/uhrm/sensors.py`) | Reused in Phases 3-5 |
-| STAC acquisition and compositing (`src/uhrm/download.py`) | Reused for Landsat; a MODIS and ERA5 acquirer is new work |
+| STAC acquisition and compositing (`src/uhrm/download.py`) | Reused as the Planetary Computer backend for Landsat; Earth Engine backends for MODIS, ERA5-Land, WorldCover and terrain are new work (FR-X.3) |
 | ConvLSTM (`src/uhrm/model.py`) | Starting point for Phase 7; changes needed for validity-mask input, multi-step output and masked loss |
 | Training loop, splits, scaler, baselines (`src/uhrm/train.py`, `dataset.py`) | Starting point; climatology baseline and mask handling are new |
 | Config validation of split ordering (`src/uhrm/config.py`) | Reused |
@@ -673,3 +743,15 @@ The repository contains an Increment 1 pipeline built for the earlier plan. It i
 ## Appendix E: Lessons from Increment 1
 
 Annual Landsat composites over Mumbai showed year-to-year swings of up to 4 °C in the city-wide mean that came from which dates were cloud-free, not from real change, and the ConvLSTM only tied the persistence baseline (1.635 °C versus 1.659 °C RMSE on a pooled run). Three consequences carry into this version: validity masks and honest handling of cloud gaps (FR-P3.4), strong simple baselines including climatology (FR-P6.2), and reporting sampling noise with every trend (FR-P5.8).
+
+## Appendix F: Changes from Version 2.0
+
+| Change | Reason |
+|---|---|
+| Two execution stages: Colab prototype, then offline finalisation, separated by Gate G1 (Section 1.8) | Fast prototyping with minimal setup now; reproducible, offline final results later |
+| Earth Engine is the prototype data path (Section 3.1) | One login reaches all four datasets with server-side clipping. v1.1 rejected Earth Engine over account dependency and quotas; in Colab the ease of access outweighs that, provided data is exported and frozen (FR-X.4) |
+| Cross-cutting requirements FR-X.1 to FR-X.9 | One code base for both modes, swappable data backends, freeze and export, Colab session safety, secrets, provisional labelling |
+| Boundaries are provisional in Stage A and authoritative in Stage B (FR-P1.8) | Quick start now; final GIS mapping in QGIS later, with the boundary a pipeline parameter |
+| Stage B may add data and fine-tune (FR-P2.11, FR-P7.10) | Matches the plan to extend the data and tune the model after the prototype works |
+| Single-seed runs allowed in Stage A; final results need three seeds (FR-P7.6) | Keeps prototyping quick without weakening final claims |
+| New constraints C13-C15, risks, and open items OI-10 and OI-11 | Colab runtime limits, Earth Engine terms, dependency compatibility |
