@@ -23,7 +23,10 @@ DRIVE_MOUNT = "/content/drive"
 
 
 def in_colab() -> bool:
-    return importlib.util.find_spec("google.colab") is not None
+    try:
+        return importlib.util.find_spec("google.colab") is not None
+    except (ImportError, ValueError):   # no `google` package at all => not Colab
+        return False
 
 
 def _install_missing() -> None:
@@ -46,6 +49,16 @@ def _ee_project(explicit: str | None, from_config: str | None) -> str | None:
 
 
 def _init_earth_engine(project_id: str | None) -> None:
+    if not project_id:
+        raise RuntimeError(
+            "No Earth Engine project id found. Do ONE of these:\n"
+            "  1. Set EE_PROJECT = 'your-project-id' in the first notebook cell, or\n"
+            "  2. Add a Colab secret named EE_PROJECT (left sidebar, key icon) and switch on "
+            "'Notebook access' for it.\n"
+            "A project id is not a credential. If you have no project yet, create one at "
+            "https://console.cloud.google.com and register it for Earth Engine at "
+            "https://code.earthengine.google.com/register (non-commercial / research use)."
+        )
     import ee
 
     try:

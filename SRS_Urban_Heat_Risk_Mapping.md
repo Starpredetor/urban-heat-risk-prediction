@@ -673,7 +673,7 @@ Unit and integration tests run offline. A synthetic series with a known pattern 
 | OI-7 | Project deadline and calendar start date for the 16 weeks | Team |
 | OI-8 | Colab tier (free or paid) and whether its GPU limits suffice for Phase 7 | Week 1, before Phase 7 |
 | OI-9 | IP route: open-source release (GPL) versus patent filing | Phase 12 |
-| OI-10 | Compatibility between Colab's Python and packages and the repository's Python 3.12 lockfile (the current pins may not install cleanly on Colab) | Week 1 |
+| OI-10 | Compatibility between Colab's Python and packages and the repository's Python 3.12 lockfile. Observed 16 Nov 2026: Colab runs Python 3.13 and `uhrm` imports and starts up there via `sys.path`; the 3.12 pins in `pyproject.toml` do not apply on Colab. Still to confirm: the full pipeline run (Earth Engine, rasterio) on 3.13 | Week 1 |
 | OI-11 | Which additional data Stage B will add (more years, variables, MODIS Aqua, more cities) | Gate G1 |
 
 ---
