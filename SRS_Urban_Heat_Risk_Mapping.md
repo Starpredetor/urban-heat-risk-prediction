@@ -1,9 +1,9 @@
 # Software Requirements Specification
 
-## Urban Heat Risk Mapping and Future Prediction using Multi-Temporal Satellite Imagery and Deep Learning
+## Urban Heat Island Analysis and Spatiotemporal Prediction Using Multi-Source Satellite Data and Deep Learning: A Comparative Study of Mumbai and Navi Mumbai
 
-**Version:** 1.1 (Finalized)
-**Date:** 9 November 2026
+**Version:** 2.0 (Finalized, phase-wise)
+**Date:** 16 November 2026
 **Prepared by:** Shubham Yedve (project team)
 **Institution:** Ramrao Adik Institute of Technology (D.Y. Patil University), Navi Mumbai
 **Document standard:** Adapted from IEEE Std 830-1998 (condensed)
@@ -12,8 +12,9 @@
 
 | Version | Date | Summary |
 |---|---|---|
-| 1.0 | 31 Aug 2026 | Initial SRS. |
-| 1.1 | 9 Nov 2026 | Aligned with the built pipeline (STAC data access, six cities, multi-sensor cube). Added delivery increments, the LST anomaly target, the LULC classification track with a weak-label plus hand-verified evaluation scheme, the candidate-model register and selection protocol, and remote GPU training requirements (FR-8). Deferred MODIS, LULC change prediction, risk index and web app to later increments. See Appendix D. |
+| 1.0 | 31 Aug 2026 | Initial SRS: heat-risk mapping for one metropolitan area. |
+| 1.1 | 9 Nov 2026 | Aligned with the built Landsat + Sentinel-2 pipeline; added LST anomaly target, land-cover classification, foundation-model comparison, remote GPU training. |
+| 2.0 | 16 Nov 2026 | **Project redefined** as a two-region (Mumbai, Navi Mumbai) spatiotemporal urban heat analysis and prediction system. MODIS MOD11A2 becomes the primary prediction dataset; Landsat is used for detailed analysis. Requirements are organised by twelve delivery phases. Future prediction is a core objective. The risk index, land-cover classifier, foundation-model comparison and web-API stack are removed from scope. See Appendix C. |
 
 ---
 
@@ -21,69 +22,92 @@
 
 ### 1.1 Purpose
 
-This document specifies the software requirements for a system that maps present-day urban heat risk and forecasts future heat risk for Indian metropolitan study areas, using multi-temporal optical and thermal satellite imagery combined with deep learning models. It is intended for the project team, the faculty guide, the review panel, and any future contributor extending the work.
+This document specifies the requirements for a system that analyses how land-surface temperature (LST) and urban development have changed across Mumbai and Navi Mumbai, identifies persistently hot areas and the environmental factors associated with them, and predicts near-term LST maps with a deep learning model. It is intended for the project team, the faculty guide, the review panel, and future contributors.
 
-### 1.2 Scope
+### 1.2 Scope and Objectives
 
-The system, referred to as **UHRM** (Urban Heat Risk Mapper), performs five things:
+The system, referred to as **UHRM** (the package name `uhrm` is retained from earlier versions; the system no longer computes a risk index), has three objectives and one delivery vehicle:
 
-1. Ingests multi-temporal satellite imagery (Landsat 8/9 and Sentinel-2; MODIS deferred) and, in later increments, ancillary geospatial and socio-economic data for defined study areas.
-2. Derives Land Surface Temperature (LST), spectral indices (NDVI, NDBI, NDWI), and Surface Urban Heat Island (SUHI) intensity per time step, while preserving the underlying reflectance bands.
-3. Trains deep learning models on the resulting spatio-temporal stack to (a) forecast the spatial pattern of LST for future time steps and (b) classify land cover (LULC) for each year.
-4. Combines the predicted hazard with exposure and vulnerability layers into a composite **Heat Risk Index (HRI)**, mapped at grid and ward level. *(Later increment.)*
-5. Serves results through an interactive web map with time-slider, scenario comparison, hotspot ranking, and exportable reports. *(Later increment.)*
+1. **Analyse the past.** Show how LST and urban development have changed across Mumbai and Navi Mumbai.
+2. **Understand the present.** Identify consistently hotter areas and the environmental factors (vegetation, built-up area, water, land cover, weather) associated with them.
+3. **Predict the future.** Use a ConvLSTM to predict the spatial pattern of LST for the next 1-3 MODIS 8-day periods, under clearly stated assumptions, and compare it with simpler methods.
+4. **Interactive dashboard.** Let a user choose a city, inspect historical maps, and view predicted maps and hotspots.
 
-**Out of scope:** real-time (sub-daily) nowcasting, air-temperature sensor networks, IoT hardware, mobile native apps, and operational early-warning alerting to the public.
+**Out of scope for this version:** air-temperature or personal heat-exposure prediction, long-range (for example 2030) climate or land-use projection, a Heat Risk Index, a supervised land-cover classifier, real-time nowcasting, sensor networks, mobile apps, a separate web API or database tier, and cloud deployment.
 
-### 1.3 Definitions and Acronyms
+### 1.3 Prediction Target (normative)
+
+The prediction target is **satellite-observed daytime land-surface (skin) temperature from MODIS MOD11A2, in °C, at 1 km, as an 8-day composite.** This is not air temperature, not a human thermal-comfort measure, and not actual heat exposure. Therefore:
+
+- Every predicted product shall be labelled "predicted LST (model output)" with its horizon and issue date.
+- Predictions shall be validated only against later observed MODIS LST (FR-P7, FR-P11).
+- The initial horizon is the next 1-3 periods (8, 16 and 24 days). This is a near-term forecast. Nothing in this document claims the model predicts the climate or urban heat of a future decade. A scenario-based projection is a separate extension (Section 12).
+
+### 1.4 Research Contribution
+
+The project proposes a multi-source spatiotemporal urban heat prediction framework for Mumbai and Navi Mumbai. It integrates satellite LST, environmental indices, land cover and meteorological variables in a ConvLSTM forecaster, and evaluates both city-specific prediction and cross-city generalisation. The contribution lies in the combination, not in any single component: ConvLSTM and urban heat prediction already exist in the literature. It comprises:
+
+| Element | Why it matters |
+|---|---|
+| Two-region comparison | Mumbai and Navi Mumbai share a coastal setting but differ in urban layout and development |
+| Multi-source integration | Satellite LST, land cover, vegetation and weather in one model |
+| Spatiotemporal learning | Spatial patterns and temporal change learned together |
+| Cross-city generalisation test | Whether a model trained in one city predicts the other |
+| Input ablation | Measures what vegetation, built-up area and weather each add |
+| Hotspot outputs | Predicted maps converted to spatially interpretable hotspots |
+
+Positive and negative results are both reportable findings.
+
+### 1.5 Definitions and Acronyms
 
 | Term | Meaning |
 |---|---|
-| LST | Land Surface Temperature, derived from thermal infrared bands |
-| SUHI | Surface Urban Heat Island: urban LST minus rural reference LST |
+| LST | Land Surface Temperature |
+| MOD11A2 | MODIS/Terra 8-day LST and emissivity product, 1 km, Version 6.1 |
+| QC | Quality-control flags supplied with a product |
 | NDVI / NDBI / NDWI | Normalized Difference Vegetation / Built-up / Water Index |
-| LULC | Land Use / Land Cover |
-| HRI | Heat Risk Index = f(Hazard, Exposure, Vulnerability) |
-| STAC | SpatioTemporal Asset Catalog, the open API used to search satellite archives |
 | ConvLSTM | Convolutional Long Short-Term Memory network |
-| SimVP | A purely convolutional video-prediction model (no recurrence) |
-| Foundation model | A large model pretrained on satellite imagery (e.g. Prithvi-EO-2.0, TerraMind), fine-tuned for a downstream task |
-| HLS | Harmonized Landsat Sentinel-2, the 30 m product family Prithvi-EO-2.0 was pretrained on |
-| TerraTorch | Fine-tuning toolkit that wraps geospatial foundation models |
-| Scene level | The single reference temperature of a city-year (defined in FR-4.8) |
-| LST anomaly | A pixel's LST minus the scene level; the spatial pattern with the city-wide offset removed |
-| Weak label | A land-cover label taken from an existing global map rather than annotated by the team; known to contain errors |
-| Verification sample | A set of points labelled by the team by eye on high-resolution imagery, used only to measure accuracy |
-| Increment | A delivered slice of UHRM (Section 1.5) |
-| COG | Cloud-Optimized GeoTIFF |
-| AOI | Area of Interest (study area) |
-| RMSE / MAE / R² / SSIM | Regression and image-similarity accuracy metrics |
+| ERA5-Land | Copernicus hourly land reanalysis, about 9 km native resolution |
+| WorldCover | ESA 10 m global land-cover map (2020 and 2021 releases) |
+| Persistence | Baseline predicting that the next observation equals the latest one |
+| Seasonal climatology | Baseline predicting the mean of the same 8-day composite window over the training years |
+| LST anomaly | LST minus its seasonal climatology |
+| Model domain | The buffered rectangular region used as model input (FR-P1.4) |
+| City mask | The polygon-derived mask of one city's pixels, used for analysis and metrics |
+| Hotspot | A pixel at or above a documented, fixed temperature threshold |
+| ΔLST | Predicted LST minus latest observed LST |
+| MAE / RMSE / R² | Regression error metrics |
 
-### 1.4 References
+### 1.6 References
 
 - IEEE Std 830-1998, Recommended Practice for Software Requirements Specifications.
-- USGS Landsat 8/9 Collection 2 Level-2 Science Products (surface temperature).
-- ESA Copernicus Sentinel-2 MSI Level-2A.
-- Microsoft Planetary Computer STAC API (data access).
-- ESA WorldCover global land-cover product (weak labels).
-- Prithvi-EO-2.0: A Versatile Multi-Temporal Foundation Model for Earth Observation Applications, arXiv:2412.02732.
-- TerraMind: IBM/ESA multimodal Earth-observation foundation model (model cards on Hugging Face, `ibm-esa-geospatial`).
-- SimVP: Simpler yet Better Video Prediction, arXiv:2211.12509; OpenSTL benchmark, arXiv:2306.11249.
-- IPCC AR6 risk framing: Risk = Hazard × Exposure × Vulnerability.
-- WorldPop / Census of India ward-level demographic data (later increment).
+- NASA LP DAAC, MOD11A2 Version 6.1 product documentation and user guide.
+- USGS Landsat 8/9 Collection 2 Level-2 surface temperature and surface reflectance documentation.
+- ESA WorldCover product documentation and user manual.
+- Copernicus Climate Change Service, ERA5-Land dataset documentation.
+- Shi et al., Convolutional LSTM Network (NeurIPS 2015).
+- Patents Act 1970, Section 3(k), and IP India's computer-related-inventions examination guidelines (Phase 12).
 
-### 1.5 Delivery Increments
+### 1.7 Phase Overview
 
-The full product is delivered in increments. Requirements below are tagged with the increment that must satisfy them. Untagged requirements belong to the increment named in their section heading, or to I2 where none is named.
+Requirements in Section 4 are organised by the twelve phases below. Each phase produces a working output and has completion criteria; the next phase starts only when they are met. Weeks are counted from the start of Phase 1.
 
-| Increment | Content | Status |
-|---|---|---|
-| **I1** Data pipeline and baseline model | STAC ingest, cloud masking, six-city cube, ConvLSTM, two baselines | Built. Cubes for five of six cities must be rebuilt (see I2). |
-| **I2** Dataset v2 and model selection (current focus) | Cube with preserved reflectance bands; LST anomaly forecasting; candidate-model comparison; LULC classification; remote GPU training | This SRS revision |
-| **I3** Risk index | Exposure, vulnerability, HRI, ward aggregation, station validation, LULC change prediction | Not started |
-| **I4** Web application | API, map UI, exports, deployment | Not started |
+| Phase | Name | Weeks | Output |
+|---|---|---|---|
+| 1 | Define the study areas | 1-2 | Boundary files, common grids, model domain |
+| 2 | Build the free dataset collection | 1-2 | Raw data and catalogue |
+| 3 | Preprocess all satellite data | 3-4 | Clean, aligned rasters |
+| 4 | Generate environmental features | 3-4 | Feature stacks |
+| 5 | Historical urban heat analysis | 5-6 | Maps, hotspots, charts (research baseline) |
+| 6 | Machine-learning baseline | 7-8 | Random Forest and evaluation report |
+| 7 | ConvLSTM prediction model | 9-11 | Trained forecaster |
+| 8 | Two-city experiments | 12-13 | Individual, combined and transfer results |
+| 9 | Future prediction and hotspots | 12-13 | Predicted maps, ΔLST, hotspots |
+| 10 | Interactive dashboard | 14 | Streamlit application |
+| 11 | Testing and research validation | 15-16 | Test report, ablation study |
+| 12 | Documentation and IP preparation | 1-16 (continuous), final 15-16 | Documents, IP review |
 
-Requirements tagged **[I3]** or **[I4]** are retained as the product definition but are not acceptance criteria for I2.
+**First milestone (gate before bulk download):** one correct MODIS LST map for Mumbai and one for Navi Mumbai, from a single observation date, quality-filtered, scaled, clipped, and checked in QGIS (Phases 1-3 in miniature).
 
 ---
 
@@ -91,205 +115,280 @@ Requirements tagged **[I3]** or **[I4]** are retained as the product definition 
 
 ### 2.1 Product Perspective
 
-UHRM is a new, self-contained research system with three tiers. Only the Processing Tier is built in I1 and I2.
+UHRM is an offline research pipeline plus a lightweight dashboard. All heavy computation (preprocessing, training, prediction) runs offline and writes files; the dashboard only reads them.
 
 ```
-┌─────────────────────────────────────────────────────────┐
-│  Presentation Tier — React + MapLibre web app   [I4]    │
-│  time-slider map · scenario compare · hotspot table      │
-└───────────────────────┬─────────────────────────────────┘
-                        │ REST / JSON + raster tiles
-┌───────────────────────┴─────────────────────────────────┐
-│  Application Tier — FastAPI service             [I4]    │
-│  job orchestration · inference API · tile server         │
-└───────────────────────┬─────────────────────────────────┘
-                        │
-┌───────────────────────┴─────────────────────────────────┐
-│  Processing Tier                                [I1-I3] │
-│  STAC ingest → preprocessing (odc-stac / xarray)         │
-│  → analysis-ready cube (reflectance + LST + indices)     │
-│  → LST forecast models   → LULC classifiers              │
-│  → risk index engine [I3] → COG / PostGIS store [I3]     │
-└─────────────────────────────────────────────────────────┘
+ Boundaries ─┐
+ MODIS LST ──┤
+ Landsat ────┼─► Preprocess ─► Features ─► Historical analysis ─┐
+ WorldCover ─┤        │                                         │
+ ERA5-Land ──┘        └─► Sequences ─► Random Forest ──┐        │
+                                    └─► ConvLSTM ──────┼─► Predicted maps ─► Streamlit
+                                       (persistence,   │   + evaluation      dashboard
+                                        climatology)───┘
 ```
 
-Training runs on either of two compute targets using the same code and configuration: the researcher's laptop, or a remote GPU server (Section 2.4, FR-8).
+### 2.2 Product Functions
 
-### 2.2 Product Functions (summary)
-
-- **F1** Data acquisition and cataloguing from STAC archives for a configured set of cities and date range.
-- **F2** Preprocessing: cloud masking, per-sensor scaling, co-registration, resampling to a common grid, temporal compositing, gap filling.
-- **F3** Feature derivation: LST, spectral indices, SUHI intensity, LULC classification.
-- **F4** Model training, comparison, and selection for LST forecasting and LULC classification.
-- **F5** Future scenario prediction for configurable horizons (+1 year validated in I2; longer horizons see FR-4.3).
-- **F6** Heat Risk Index computation and ward-level aggregation. *[I3]*
-- **F7** Visualization, comparison, hotspot ranking, and export (GeoTIFF/CSV/PDF). *[I4]*
-- **F8** Reproducibility: run manifests, versioned datasets and model checkpoints.
-- **F9** Portable training execution on local and remote GPUs.
+- **F1** Study-area definition and gridding for two cities.
+- **F2** Acquisition and cataloguing of free public datasets.
+- **F3** Preprocessing: quality masking, scaling, clipping, reprojection, alignment.
+- **F4** Feature derivation: NDVI, NDBI, NDWI, land-cover fractions, terrain, weather aggregates.
+- **F5** Historical analysis: maps, hotspots, trends, city comparison, factor relationships.
+- **F6** Baseline and deep-learning prediction of near-term LST.
+- **F7** Two-city experiments: individual, combined, cross-city transfer.
+- **F8** Prediction products: predicted maps, ΔLST, hotspots.
+- **F9** Dashboard for exploration of the above.
+- **F10** Reproducibility: run manifests, dataset catalogue, versioned outputs.
 
 ### 2.3 User Classes
 
-| User class | Description | Key needs |
-|---|---|---|
-| Researcher / student (primary) | Team members running experiments | Full pipeline control, metrics, reproducibility, remote training |
-| Faculty guide / reviewer | Evaluates methodology and results | Clear results, metric tables, honest baselines, exportable figures |
-| Urban planner (secondary) | Domain consumer of outputs *[I3/I4]* | Ward-level risk maps, hotspot lists, plain-language reports |
-| General visitor | Public demo viewer *[I4]* | Read-only map exploration |
+| User class | Needs |
+|---|---|
+| Researcher / student (primary) | Full pipeline control, metrics, reproducibility |
+| Faculty guide / reviewer | Clear results, honest baselines, exportable figures |
+| Urban-planning audience (secondary) | Readable maps, hotspots, plain-language limitations |
 
 ### 2.4 Operating Environment
 
-- **Language and environment:** Python 3.12, managed with `uv`, dependencies pinned in `uv.lock`. Python 3.13 and 3.14 are not supported because PyTorch, rasterio, and odc-stac publish no wheels for them.
-- **Local development and small-model training:** Windows 11 laptop, NVIDIA RTX 4060 Laptop GPU (8 GB VRAM), CUDA 12.6 PyTorch build. The code must also run on CPU.
-- **Remote training:** a GPU server available to the team. Its hardware (GPU model, VRAM, RAM, disk), operating system, and access method (SSH, hosted notebook, or batch scheduler) are **not yet known** and are recorded as an open item (Section 12, OI-1). All FR-8 requirements are written to hold under any of the three access methods.
-- **Data access:** Microsoft Planetary Computer STAC API; no account or export quota (supersedes Google Earth Engine, Appendix D).
-- **Serving [I4]:** Docker containers; PostgreSQL + PostGIS; object storage for COGs.
-- **Client [I4]:** Any modern desktop or mobile browser (Chrome/Firefox/Safari, last two versions).
+- Python 3.12 with `uv` and a committed lockfile (existing repository convention). Python 3.13 and 3.14 are unsupported because required geospatial and PyTorch wheels are unavailable.
+- Notebooks and scripts run locally (Windows 11 laptop, RTX 4060 8 GB) or on Google Colab. The MODIS-based dataset is small enough for both. The separate GPU server mentioned in v1.1 is optional and no longer required by any requirement.
+- QGIS for boundary preparation and visual verification.
+- Dashboard: Streamlit run locally; hosting is optional and not required.
 
 ### 2.5 Design and Implementation Constraints
 
-- **C1** Landsat thermal data is 100 m resampled to 30 m and revisits every 16 days. Cloud cover in the Indian monsoon (Jun-Sep) makes those months unusable in every study city, so the analysis is restricted to the pre-monsoon season (Mar-May) and the system must tolerate irregular temporal sampling. Chennai has the fewest clear scenes of the six cities.
-- **C2** MODIS gives daily LST but at 1 km; any fusion must handle the scale mismatch explicitly. MODIS is deferred (Appendix D).
-- **C3** Planetary Computer asset URLs are signed and expire; reads can fail transiently. Large areas must be processed per city and per year, with retry (NFR-3.2).
-- **C4** Ground-truth air temperature stations are sparse; validation relies primarily on held-out satellite LST plus limited IMD station comparison [I3].
-- **C5** Free-tier hosting limits inference to pre-computed rasters rather than on-demand training [I4].
-- **C6** Socio-economic vulnerability data is available only at ward/census-tract resolution, coarser than the hazard grid [I3].
-- **C7 Short time series.** Annual composites over 2013-2025 give 13 time steps per city. With a 3-year input window, forecast targets exist only for 2016-2025 (10 years), of which three are test years. Model capacity and seed variance must be judged against this.
-- **C8 Scene-level noise.** The city-wide mean LST of a pre-monsoon composite moves by up to 4 °C between consecutive years because of which dates happened to be cloud-free, not because the city changed. This offset is not predictable from local image patches and dominates absolute-LST forecast error (Appendix E).
-- **C9 Label quality.** No ground-truth land-cover labels exist for the study areas. Global land-cover maps used as weak labels are themselves imperfect, so accuracy measured against them alone is not accuracy against the ground (FR-3.4, NFR-2.2).
-- **C10 Pretraining mismatch.** Foundation models are pretrained at specific resolutions and band sets (Prithvi-EO-2.0 on 30 m HLS reflectance; TerraMind on 10 m Sentinel-2 L2A). UHRM inputs are 30 m. Sentinel-2 bands are averaged to 30 m, which is a distribution shift for models pretrained at 10 m.
-- **C11 Mixed-sensor series.** Sentinel-2 starts in 2017. For earlier years, spectral indices come from Landsat. The sensor used is recorded per year (`index_source`) because a sensor change can create a step in a series that is not a real change.
+- **C1 Few pixels per city.** At 1 km, Greater Mumbai (on the order of 600 km²) holds roughly 600 pixels and Navi Mumbai (on the order of 160 km²) roughly 160, before coastal and water exclusions. Exact counts are reported in Phase 1. A 64 × 64 patch (4,096 km²) is far larger than either city, which is why FR-P1.4 defines a buffered model domain.
+- **C2 Coastal and mixed pixels.** Many 1 km cells straddle land and sea or creek; their LST is a mixture. They must be identified and handled consistently (FR-P1.5).
+- **C3 Missing observations.** Monsoon cloud (about June-September) leaves large parts of many 8-day composites invalid. Gaps are not silently filled; targets are never filled (FR-P3.4).
+- **C4 Strong seasonality.** An 8-day-ahead LST forecast is dominated by the seasonal cycle. Beating persistence is not sufficient evidence of skill; seasonal climatology is a mandatory baseline, and R² on absolute LST is inflated by the cycle (FR-P7.7).
+- **C5 Thermal resolution.** Landsat 8/9 thermal bands are 100 m native, distributed on a 30 m grid. Resampling is not extra thermal detail, and no result may claim 30 m thermal detail. MODIS thermal is 1 km.
+- **C6 Coarse weather.** ERA5-Land is about 9 km native. Mumbai and Navi Mumbai fall in the same or adjacent cells, so weather is regional context, not neighbourhood weather, and is nearly identical for both cities.
+- **C7 Shared weather and nearby geography.** The two cities experience the same synoptic weather in the same 8-day windows. Cross-city results are therefore weaker evidence of generalisation than results for distant cities, and the transfer design must prevent temporal leakage (FR-P8.4).
+- **C8 Time-varying inputs have different histories.** MODIS LST starts in 2000 (full years from 2001). Landsat 8/9 starts in 2013. WorldCover exists only for 2020 and 2021 and is a static layer. A model sequence spanning 2001-2025 cannot use Landsat indices or WorldCover as time-varying inputs (FR-P4.7).
+- **C9 Static land cover.** WorldCover cannot show urban development change across 2001-2025. Development change is analysed with Landsat-derived indices from 2013 (FR-P5.7).
+- **C10 Account-gated data.** MODIS (NASA Earthdata) and ERA5-Land (Copernicus Climate Data Store) require free accounts and API setup. Credentials are never committed (NFR-6.1).
+- **C11 Terra overpass time.** MOD11A2 is a mid-morning (Terra) product and does not capture the afternoon peak of surface heating. Findings describe mid-morning LST.
+- **C12 Short effective series for urban change.** Annual and seasonal comparisons from Landsat have few years; trends must be reported with their sampling noise.
 
 ### 2.6 Assumptions and Dependencies
 
-- Continued free availability of Landsat and Sentinel archives through Planetary Computer.
-- Hugging Face Hub remains reachable for pretrained weights; weight licences permit the intended use (checked before release, NFR-7.4).
-- The remote GPU server provides enough VRAM for the model sizes in Appendix C. This is unverified until the server probe (FR-8.7) is run.
-- ESA WorldCover (or an equivalent global product) covers all six study areas.
-- Census/WorldPop and ward boundary shapefiles are obtainable for the AOIs [I3].
+- MODIS MOD11A2 v6.1, Landsat 8/9 C2 L2, ESA WorldCover and ERA5-Land remain freely available.
+- Boundary files for both cities can be obtained from municipal, survey, census or OpenStreetMap sources and their provenance documented.
+- At least one GPU environment (laptop or Colab) is available for ConvLSTM training.
 
 ---
 
 ## 3. External Interface Requirements
 
-### 3.1 User Interfaces *[I4]*
+### 3.1 Data Sources
 
-- **UI-1 Map view:** basemap, LST/HRI raster overlay with legend, opacity control, year time-slider, layer toggles.
-- **UI-2 Scenario panel:** side-by-side or swipe comparison of observed vs predicted year.
-- **UI-3 Hotspot table:** ranked wards/grid cells by HRI, sortable, with drill-down chart of the LST time series.
-- **UI-4 Job console (researcher only):** launch ingestion/training runs, view logs, metrics, and checkpoints.
-- **UI-5 Export dialog:** GeoTIFF, CSV, PNG, and a one-page PDF summary.
-
-Until I4, the researcher interface is the command line (`scripts/build_dataset.py`, `scripts/train.py`, `scripts/make_maps.py`).
+| Source | Product | Access |
+|---|---|---|
+| NASA LP DAAC | MOD11A2 v6.1 (LST_Day_1km, QC_Day; optionally night LST and view time) | NASA Earthdata (free account), or an equivalent mirror if verified (OI-6) |
+| USGS | Landsat 8/9 Collection 2 Level-2 (ST, SR, QA_PIXEL) | STAC via Microsoft Planetary Computer (existing pipeline) or USGS |
+| ESA | WorldCover 2020 and 2021 | Free download or STAC |
+| Copernicus C3S | ERA5-Land hourly | Climate Data Store API (free account) |
+| Terrain | Copernicus DEM or SRTM | Free download |
+| Vegetation at MODIS cadence | A MODIS vegetation or reflectance product (OI-2) | NASA Earthdata |
+| Boundaries | Municipal / survey / census / OSM | Free download; provenance recorded |
 
 ### 3.2 Software Interfaces
 
-| Interface | Purpose | Protocol/Format |
-|---|---|---|
-| Planetary Computer STAC API | Imagery search and signed asset access | HTTPS, `pystac-client`, `planetary-computer` |
-| `odc-stac` | Read STAC items onto a fixed grid | Python API |
-| ESA WorldCover (via STAC or direct download) | Weak land-cover labels | GeoTIFF |
-| Hugging Face Hub | Pretrained foundation-model weights | HTTPS |
-| TerraTorch | Fine-tuning wrapper for Prithvi / TerraMind | Python API |
-| Remote GPU server | Training execution | SSH / notebook / batch scheduler (OI-1) |
-| PostGIS *[I3]* | Vector boundaries, ward statistics | SQL |
-| Object store *[I4]* | COG tiles and checkpoints | S3 API |
+Python libraries for raster, vector, ML and visualisation work (Appendix B); QGIS for inspection; a Colab runtime as an optional compute target.
 
-### 3.3 Communications Interfaces *[I4]*
+### 3.3 User Interface (Dashboard, Phase 10)
 
-HTTPS for all client-server traffic; JSON for API payloads; XYZ/WMTS tile endpoints for raster delivery; JWT bearer tokens for authenticated researcher routes.
+| Page | Function |
+|---|---|
+| Overview | Project introduction and city selection |
+| Historical Analysis | Past temperature maps and trends |
+| Environmental Analysis | NDVI, NDBI, NDWI, land cover |
+| Prediction | ConvLSTM predicted temperature maps, ΔLST, hotspots |
+| City Comparison | Mumbai versus Navi Mumbai |
+| Model Evaluation | MAE, RMSE, R², skill versus baselines, error maps |
 
 ---
 
-## 4. Functional Requirements
+## 4. Functional Requirements by Phase
 
-### 4.1 Data Acquisition (FR-1)
+### 4.1 Phase 1: Define the Study Areas (Weeks 1-2)
 
-- **FR-1.1** The system shall accept the study areas as a list of named cities, each defined by centre latitude/longitude and a square radius (default 40 × 40 km), from a single configuration file. Arbitrary GeoJSON polygons are a future extension.
-- **FR-1.2** The system shall accept a year range and sensor set: Landsat 8/9 Level-2 (default from 2013) and Sentinel-2 L2A (from 2017). MODIS is deferred.
-- **FR-1.3** The system shall filter scenes by cloud cover (default ≤ 20 %), restrict to configured months (default Mar-May), cap scenes per year (default 12), and record the count of usable scenes per city-year.
-- **FR-1.4** The system shall persist a catalogue entry (scene ID, sensor, acquisition date, cloud %) for every ingested scene.
-- **FR-1.5** The system shall ingest ancillary layers: ward boundaries, population density, building footprints, elevation, and socio-economic indicators. **[I3]**
-- **FR-1.6** The system shall ingest an external land-cover product for each study area as weak labels for FR-4.9, recording its name, version, year, and licence in the dataset manifest.
+**Objective:** consistent geographical boundaries and grids for both regions.
 
-### 4.2 Preprocessing (FR-2)
+- **FR-P1.1** The system shall use two separate study-area polygons: Greater Mumbai (municipal region) and Navi Mumbai. Rectangles around the cities shall not be used as study areas.
+- **FR-P1.2** The Navi Mumbai boundary shall be documented precisely: the authority (for example the municipal corporation versus the planning authority), source, retrieval date, and the reason for the choice (OI-1).
+- **FR-P1.3** Boundary files shall be checked for coordinate reference system, repaired for invalid geometry, and saved as GeoJSON: `mumbai.geojson`, `navi_mumbai.geojson`, and `combined_study_area.geojson`.
+- **FR-P1.4** The system shall define a **model domain**: the bounding region of both cities plus a documented buffer, large enough to cut model patches. City polygons remain the masks for analysis and for every reported metric. (Rationale: constraint C1.)
+- **FR-P1.5** The system shall define, for the 1 km model grid, a documented rule assigning cells to a city (for example majority overlap with the polygon), and shall flag coastal and water-dominated cells using a land/water fraction.
+- **FR-P1.6** One projected CRS (UTM zone 43N, EPSG:32643, covers both cities) and one set of grid definitions (1 km model grid; 30 m Landsat analysis grid) shall be used by all later phases.
+- **FR-P1.7** The system shall report the number of valid 1 km cells per city after masking.
 
-- **FR-2.1** The system shall mask cloud and cloud shadow using `QA_PIXEL` (Landsat) and `SCL` (Sentinel-2). Water shall be kept, because it has a real surface temperature. Quality bands shall be resampled by nearest neighbour only.
-- **FR-2.2** The system shall reproject and resample all layers to a common grid. The CRS shall be the UTM zone of each city, computed from its longitude (India spans zones 43N and 44N). Default resolution is 30 m; Sentinel-2 reflectance shall be averaged down to it. Thermal data shall never be upsampled.
-- **FR-2.3** The system shall generate one annual composite per city-year from the configured months, using the per-pixel median of cloud-free observations, and shall store the number of clear observations per pixel.
-- **FR-2.4** The system shall fill residual gaps using documented temporal interpolation and flag filled values so that filled pixels can be excluded from metrics.
-- **FR-2.5** The system shall normalize model inputs using statistics computed on **training-period years only** and shall store the scaling parameters with the dataset version.
-- **FR-2.6** The system shall apply each sensor's scaling rules exactly, including the Sentinel-2 processing-baseline offset of -1000 DN for scenes from 25 January 2022 onward, and shall reject reflectance outside its valid range as missing rather than clamp it. Tests shall guard both rules.
-- **FR-2.7 (new)** The system shall **preserve the six surface-reflectance bands** (blue, green, red, nir, swir16, swir22) in the cube alongside the derived layers. Spectral indices alone are not sufficient input for pretrained models and cannot be used to derive new indices or albedo later.
-- **FR-2.8 (new)** The system shall record, per city-year, which sensor supplied the reflectance bands and indices (`index_source`).
+**Outputs:** `data/boundaries/` files; grid definitions; cell-count report.
+**Completion:** both boundaries display correctly in QGIS; CRS and cell counts documented.
 
-### 4.3 Feature Derivation (FR-3)
+### 4.2 Phase 2: Build the Free Dataset Collection (Weeks 1-2)
 
-- **FR-3.1** The system shall obtain LST in °C from the Landsat Collection-2 surface temperature product directly, treating values outside 0-70 °C as invalid.
-- **FR-3.2** The system shall compute NDVI, NDBI, and NDWI per time step. Albedo (Liang 2001 coefficients) and impervious surface fraction are **[I3]** and derive from the preserved bands (FR-2.7) and the LULC product.
-- **FR-3.3** The system shall compute SUHI intensity as urban-pixel LST minus the mean LST of a rural reference buffer. SUHI is a diagnostic layer, not a model input, because it is a linear function of LST.
-- **FR-3.4** The system shall produce an LULC classification per year with minimum classes built-up, vegetation, water, and bare soil, and shall report overall accuracy, kappa, and per-class precision/recall measured on the **verification sample** (FR-4.9, NFR-2.2).
+**Objective:** a locally organised historical dataset for both cities.
 
-**Cube specification (Dataset v2).** One file per city with dimensions `(year, layer, y, x)` and ten layers in this order: `lst, ndvi, ndbi, ndwi, blue, green, red, nir, swir16, swir22`. Alongside it: `n_clear(year, y, x)`, `index_source(year)`, the CRS and transform, and a manifest with configuration hash, band order, and content hash. Dataset v1 (four layers) is superseded; changing the layer list changes the dataset version.
+- **FR-P2.1** Download MODIS MOD11A2 v6.1 for the model domain: daytime LST and its QC layer (night LST and view time optional). Historical period 2001 to the latest complete year; the end date is verified from actual availability before being fixed (OI-4).
+- **FR-P2.2** Retrieve Landsat 8/9 Collection 2 Level-2 scenes (ST, SR, QA_PIXEL) for 2013 to the latest year, restricted to selected years and to March-May for the main seasonal comparison.
+- **FR-P2.3** Retrieve ESA WorldCover tiles for 2020 and 2021 covering the model domain.
+- **FR-P2.4** Retrieve ERA5-Land hourly variables for the domain for 2001 to the latest year: air temperature, humidity-related variables (for example dewpoint), 10 m wind components, and optionally soil or skin temperature.
+- **FR-P2.5** Retrieve terrain (elevation) data and a vegetation or reflectance product at MODIS cadence, as decided in OI-2.
+- **FR-P2.6** Raw downloads shall be stored separately from processed files and never modified.
+- **FR-P2.7** The system shall maintain a CSV catalogue with dataset name, date, city or domain, source, file path, and checksum.
+- **FR-P2.8** Downloads shall be resumable, retry up to 3 times with exponential backoff, and log failures without stopping.
+- **FR-P2.9** A single-date test download of MOD11A2 shall pass Phase 3 checks before bulk download starts.
 
-### 4.4 Modelling and Prediction (FR-4)
+**Outputs:** `data/raw/` tree and catalogue CSV.
+**Completion:** catalogue complete; expected (about 46 per year) versus retrieved MODIS composites reported per year, with gaps listed.
 
-**Job 1: LST forecasting**
+### 4.3 Phase 3: Preprocess All Satellite Data (Weeks 3-4)
 
-- **FR-4.1** The system shall implement and compare the candidate forecasters of Appendix C: a ConvLSTM (reference), SimVP, and Prithvi-EO-2.0 with a frozen encoder and a trained head. All shall consume the same input window and produce the same output (FR-4.8), so that swapping a model is a configuration change (NFR-5.3).
-- **FR-4.2** The system shall train an LULC change-prediction component whose output feeds the LST forecast as a covariate. **[I3]**
-- **FR-4.3** The system shall validate a **+1 year** forecast horizon. Horizons of +5 and +10 years may be produced by recursive roll-out as demonstrations, but shall be labelled unvalidated and carry no accuracy claim unless a backtest on held-out years supports one.
-- **FR-4.4** The system shall use a temporally disjoint split on **target year** with no future leakage, configured as: train targets 2016-2021, validation target 2022, test targets 2023-2025, with a 3-year input window. Configuration loading shall refuse overlapping or misordered splits. The system shall report RMSE, MAE, R², and SSIM against held-out observed LST over valid (non-filled) pixels only. Water shall be handled explicitly and identically for the model and all baselines, and the handling shall be recorded in the run manifest.
-- **FR-4.5** The system shall benchmark every deep model against, at minimum, (i) persistence (next year equals last year) and (ii) a per-pixel linear trend, both evaluated on identical splits and in both the anomaly and absolute framings (FR-4.8). A classical machine-learning baseline (Random Forest or XGBoost on the same features) **should** also be reported.
-- **FR-4.6** The system shall record each run's resolved configuration, dataset hash, random seed, per-epoch metrics, best checkpoint, and final metrics table in a self-contained run directory. MLflow or Weights & Biases are optional later additions.
-- **FR-4.7** The system **should** produce per-pixel uncertainty for each forecast, using the spread across seeds (FR-4.10) or MC dropout. Mandatory from I4.
-- **FR-4.8 (new) Target definition.** The forecasting target is the **LST anomaly**, defined as pixel LST minus the scene level, where the scene level is a single reference temperature per city-year computed over valid land pixels. The exact definition (scene mean vs rural-reference mean) is fixed in the I2 design specification and recorded in the manifest (OI-2). Consequently:
-  - The model predicts the spatial pattern of next year's anomaly; the city-wide offset, which the model cannot observe from local patches (C8), is removed before training.
-  - Absolute LST is reconstructed as predicted anomaly plus a scene level. The scene level shall be handled as a separate, explicitly reported component (forecast by the baselines of FR-4.5, or supplied as an oracle for diagnosis), never silently folded into the model's score.
-  - Every run shall report **both** the anomaly-framed metrics (the measure of spatial skill) and absolute-framed metrics using a stated scene-level source. NFR-2.1 is assessed on the absolute °C metric.
-  - The raw-LST result of Increment 1 is retained as the reference point for showing whether the anomaly framing helped.
-- **FR-4.9 (new) Job 2: LULC classification.** The system shall train a four-class land-cover classifier and compare at least: (a) a U-Net with an ImageNet-initialised ResNet-34 encoder (`segmentation-models-pytorch`) as the baseline, and (b) a foundation-model encoder (TerraMind or Prithvi-EO-2.0) with a segmentation head via TerraTorch.
-  - Training uses the weak labels of FR-1.6.
-  - **Accuracy is measured only on the verification sample:** at least 300 points, stratified across the four classes and the six cities, labelled by the team on high-resolution imagery and without sight of any model output. Each class shall have at least 30 points; a class that cannot reach this is reported as unevaluated rather than estimated.
-  - Agreement with the weak labels is reported separately and labelled as such.
-  - Validation uses spatial hold-out (tiles or whole cities not seen in training) so that neighbouring pixels do not leak.
-  - Because global products exist only for specific years, the classifier is trained on the labelled years and applied to the others. This temporal transfer shall be stated wherever per-year maps are shown (OI-3).
-- **FR-4.10 (new) Model selection protocol.** Candidates shall be compared on identical splits, identical inputs, and the same target. Each candidate shall be trained with **at least three random seeds** and reported as mean ± standard deviation. Hyperparameters and the final candidate are chosen on the validation split only; the test split is evaluated once per final candidate. Results where a large model does not beat a simple one are reported as findings, consistent with Section 10.
+**Objective:** clean, aligned rasters for both cities.
 
-### 4.5 Risk Index (FR-5) *[I3]*
+- **FR-P3.1 MODIS.** Apply the QC mask (exact retention rule fixed from the product user guide and recorded), remove fill and out-of-range values, apply the product scale factor (0.02), and convert to Celsius:
+  LST_K = DN × 0.02, LST_°C = LST_K − 273.15.
+- **FR-P3.2 Landsat.** Apply the official Collection 2 scale factors and quality flags:
+  ST_K = DN × 0.00341802 + 149; ST_°C = ST_K − 273.15; SR = DN × 0.0000275 − 0.2.
+  Reflectance outside its valid range shall be set to missing, never clamped.
+- **FR-P3.3** Clip all data to the model domain and city masks, reproject to the common CRS, and resample to the common grids. Continuous bands use averaging or bilinear resampling; categorical and quality layers use nearest-neighbour or mode only.
+- **FR-P3.4 Missing data.** Every processed raster shall carry a validity mask. The system shall not silently fill gaps. Any gap-filling method shall be documented and flagged in the mask, and **target values shall never be gap-filled.** A configurable minimum valid-pixel fraction decides whether a date is usable in training sequences, and the chosen threshold is justified from the observed distribution.
+- **FR-P3.5** All outputs shall use consistent dates keyed to the MODIS 8-day composite start date; other sources are aligned to these windows (FR-P4.4).
+- **FR-P3.6** Processed rasters shall be saved as GeoTIFF with a manifest recording sources, scale factors and masks applied.
+- **FR-P3.7** Unit tests shall check scaling against hand-computed values, mask decoding against constructed bit patterns, and grid alignment between layers.
 
-- **FR-5.1** The system shall compute Hazard from predicted LST/SUHI intensity and exceedance frequency above a threshold.
-- **FR-5.2** The system shall compute Exposure from population density and built-up density.
-- **FR-5.3** The system shall compute Vulnerability from available socio-economic and physical indicators (e.g. dependency ratio, green-space access, housing type), with the chosen indicators documented.
-- **FR-5.4** The system shall normalize the three components and combine them into an HRI using a documented weighting scheme (default: equal weights; AHP/entropy weighting configurable).
-- **FR-5.5** The system shall classify HRI into five ordinal risk classes and aggregate to ward level with the mean and 90th percentile.
-- **FR-5.6** The system shall run a sensitivity analysis showing how ward rankings change under alternative weightings.
+**Outputs:** `data/processed/` aligned rasters; manifest.
+**Completion:** the first milestone maps pass visual and numeric sanity checks (plausible °C range, coastline in the right place, masked pixels where cloud is expected).
 
-### 4.6 Visualization and Export (FR-6)
+### 4.4 Phase 4: Generate Environmental Features (Weeks 3-4)
 
-- **FR-6.1 [I2]** The system shall produce static maps and charts per city: LST, indices, SUHI, and year-by-year comparison on a shared colour scale (`scripts/make_maps.py`).
-- **FR-6.2 [I4]** The system shall render LST, SUHI, LULC, and HRI layers as map overlays with a shared legend and year selector, and allow side-by-side comparison of any two years.
-- **FR-6.3 [I4]** The system shall display a ranked hotspot list with ward name, HRI, and dominant contributing factor.
-- **FR-6.4 [I4]** The system shall plot the LST/HRI time series for any clicked location, distinguishing observed from predicted with an uncertainty band.
-- **FR-6.5 [I4]** The system shall export layers as GeoTIFF, tabular statistics as CSV, and a one-page PDF summary for a selected ward.
+**Objective:** a feature stack per city and observation period.
 
-### 4.7 System Management (FR-7)
+- **FR-P4.1** Compute NDVI = (NIR − Red)/(NIR + Red), NDBI = (SWIR1 − NIR)/(SWIR1 + NIR) and NDWI = (Green − NIR)/(Green + NIR) from Landsat reflectance, with a guard for zero denominators.
+- **FR-P4.2** Derive land-cover fractions per 1 km cell from WorldCover: built-up, tree cover, grass and cropland, water and wetland (mangroves kept distinguishable where present), and other. The grouping shall be documented.
+- **FR-P4.3** Where data quality permits, derive elevation and distance to major water bodies.
+- **FR-P4.4** Aggregate ERA5-Land variables to the same 8-day windows as MODIS, resample to the model grid, and document the aggregation (for example mean of daytime hours near the Terra overpass). Coarse weather shall not be presented as fine-scale measurement.
+- **FR-P4.5** Encode time of year with cyclical features (for example sine and cosine of day of year).
+- **FR-P4.6** Save the feature stack with a channel manifest listing, per channel, name, unit, source, native resolution, temporal cadence, and aggregation method.
+- **FR-P4.7** For sequences spanning 2001-2025, vegetation inputs shall come from a MODIS-cadence product (OI-2). Landsat indices (2013 onward) are used for detailed analysis and for any 2013-onward experiment, not for the full-history model. WorldCover fractions are time-invariant channels and shall be labelled as such.
 
-- **FR-7.1 [I4]** The system shall authenticate researcher-role users before allowing ingestion or training jobs; public map view requires no login.
-- **FR-7.2** The system shall log every pipeline stage with timestamps, inputs, outputs, and failures.
-- **FR-7.3** The system shall version datasets and model checkpoints so any published figure can be regenerated from its run ID.
+**Outputs:** feature stacks per city and period.
+**Completion:** channel manifest complete; a spot check of each channel against its source for one date.
 
-### 4.8 Training Execution (FR-8) — new
+### 4.5 Phase 5: Historical Urban Heat Analysis (Weeks 5-6)
 
-Training must run unchanged on the laptop and on a remote GPU server whose specification and access method are not yet known.
+**Objective:** establish what the model is meant to learn; this is the research baseline.
 
-- **FR-8.1** Training shall be launched by one entry point that takes a configuration file path and an output directory. No path, device, or batch size shall be hard-coded.
-- **FR-8.2** The device shall be resolved at run time (CUDA if present, otherwise CPU). Mixed-precision training shall be switchable by configuration, and batch size and patch size shall be configurable so a run can be sized to the available VRAM.
-- **FR-8.3** Training shall write a checkpoint at the end of every epoch containing model, optimizer, scheduler, random-number state, and epoch counter, and shall resume from it with a single flag, so a run survives disconnects, queue time limits, and pre-emption.
-- **FR-8.4** The dataset shall be portable. The cube files plus their manifest shall be transferable as a unit (e.g. `rsync`), and the training entry point shall verify the content hash on start and refuse to run on a mismatch.
-- **FR-8.5** The server environment shall be reproducible from the same lockfile. Where `uv` cannot be installed on the server, an exported `requirements.txt` shall be provided and kept in sync with the lockfile.
-- **FR-8.6** Runs shall be headless: all output to a log file, no interactive prompts, safe under `tmux`/`nohup` or a batch scheduler. A scheduler submission template shall be provided once the access method is known.
-- **FR-8.7** The system shall include a **server probe** script that reports GPU model and VRAM, CPU count, RAM, free disk, Python version, whether `uv`, `git`, `rsync`, and a scheduler are present, and outbound access to the Hugging Face Hub. Its output closes OI-1.
-- **FR-8.8** A run directory shall be self-contained and copyable back to the laptop for analysis, with no reference to absolute paths on the server.
+- **FR-P5.1** Generate historical MODIS LST maps for both cities.
+- **FR-P5.2** Generate detailed Landsat LST maps for selected years, labelled with the 100 m native thermal resolution (C5).
+- **FR-P5.3** Compute annual and March-May (pre-monsoon) LST statistics per city, using observed pixels only and reporting the valid fraction.
+- **FR-P5.4** Identify persistent hotspots by a documented method (for example the fraction of years in which a pixel exceeds a percentile threshold).
+- **FR-P5.5** Compare vegetation and built-up areas with LST (NDVI and NDBI versus LST), with water masked before interpreting any relationship.
+- **FR-P5.6** Compare Mumbai with Navi Mumbai.
+- **FR-P5.7** Analyse change over time in the spatial distribution of heat, and in urban development using Landsat-derived index change from 2013 (C8, C9).
+- **FR-P5.8** Present trends with their sampling noise; annual composite means can shift because of which dates were cloud-free, not only because of real change.
+
+**Outputs:** historical LST maps, hotspot maps, city comparison charts, trend graphs, NDVI/NDBI-versus-LST analysis.
+**Completion:** each map and chart reproducible from a script or notebook; findings written up per city.
+
+### 4.6 Phase 6: Machine-Learning Baseline (Weeks 7-8)
+
+**Objective:** show whether deep learning improves on conventional methods.
+
+- **FR-P6.1** Train a Random Forest regressor on observed MODIS daytime LST in two variants:
+  (a) **explanatory** (concurrent NDVI, NDBI, NDWI proxies, land-cover fractions, weather; no lagged LST), used for the factor analysis of objective 2 and not as a forecasting benchmark;
+  (b) **forecast** (lagged LST plus features available at the forecast origin), predicting the same targets and horizons as the ConvLSTM, and used as the forecasting benchmark.
+- **FR-P6.2** Also compute the **persistence** and **seasonal climatology** baselines on the identical splits.
+- **FR-P6.3** Splits shall be chronological. Neighbouring pixels from the same observation shall never be split randomly between training and test.
+- **FR-P6.4** Report MAE, RMSE and R², where MAE = (1/n)Σ|y − ŷ| and RMSE = √((1/n)Σ(y − ŷ)²), computed on observed pixels only, per city and per season.
+- **FR-P6.5** Report feature importance, noting that importance indicates association, not causation.
+- **FR-P6.6** After these results, the numeric accuracy target of NFR-2.1 shall be fixed and recorded as a controlled change (OI-5).
+
+**Outputs:** `models/random_forest/`, evaluation report.
+**Completion:** working Random Forest baseline and a written evaluation report.
+
+### 4.7 Phase 7: ConvLSTM Prediction Model (Weeks 9-11)
+
+**Objective:** the central deep-learning component.
+
+- **FR-P7.1 Inputs.** Each sequence has 12 previous 8-day observations. Channels: daytime LST, vegetation (MODIS-cadence), built-up fraction, weather, seasonal encoding, and a validity-mask channel. Initial patch size 64 × 64 cells cut from the model domain.
+- **FR-P7.2 Outputs.** The next 1-3 observations. The implementation shall document whether the multi-step prediction is direct (all steps at once) or recursive.
+- **FR-P7.3 Sequences.** Build sliding windows over the chronological series. No window may contain an observation later than its target. Windows with too many invalid target pixels are excluded or handled by a masked loss, as documented.
+- **FR-P7.4 Splits.** Chronological: earlier years train, later years validate, the most recent complete years test. Default: 2001-2019 train, 2020-2022 validation, 2023-2025 test, adjusted after the availability check of Phase 2. Configuration loading shall refuse overlapping or misordered splits.
+- **FR-P7.5 Normalisation.** Statistics are computed on training years only and stored with the model.
+- **FR-P7.6 Training.** PyTorch (existing code base). Loss computed only over observed target pixels. Every run records its configuration, seed, dataset manifest, per-epoch metrics, and best checkpoint in a run directory. Each configuration is trained with **at least three seeds**.
+- **FR-P7.7 Evaluation.** Report MAE, RMSE and R² on observed pixels, per city, per season, and per horizon; spatial error maps; R² additionally on **LST anomalies** (observation minus seasonal climatology), because absolute-LST R² is inflated by the seasonal cycle; and a skill score SS = 1 − RMSE_model/RMSE_reference against persistence, seasonal climatology and the Random Forest forecast variant.
+- **FR-P7.8** The model shall be compared against Random Forest, persistence and seasonal climatology on identical splits. If it does not beat the simpler methods, that is reported as a finding.
+- **FR-P7.9** Training shall be resumable from a per-epoch checkpoint so a Colab disconnect does not lose a run.
+
+**Outputs:** `models/convlstm/`, evaluation tables and error maps.
+**Completion:** a trained model producing future temperature maps, with the full comparison table.
+
+### 4.8 Phase 8: Two-City Experiments (Weeks 12-13)
+
+**Objective:** the comparative research contribution.
+
+- **FR-P8.1 Experiment A (individual).** Train and test on Mumbai and on Navi Mumbai separately.
+- **FR-P8.2 Experiment B (combined).** Train one model on both cities.
+- **FR-P8.3 Experiment C (transfer).** Train on one city and test on the other, in both directions.
+- **FR-P8.4 No temporal leakage across cities.** Because both cities share the same weather and dates (C7), transfer experiments shall use the same chronological split: the source city is trained on training years only, and the target city is evaluated on test years only.
+- **FR-P8.5 No spatial contamination.** City-specific models shall compute loss only inside their own city mask, and the other city's cells inside the model domain shall be masked from the input, or the design shall document and justify an alternative. A test shall verify that no cell of the held-out city contributes to training.
+- **FR-P8.6** Report each experiment per city and per season, with mean and standard deviation across seeds, and state plainly that the small number of Navi Mumbai cells limits statistical power.
+- **FR-P8.7** Transfer results are reported whether positive or negative.
+
+**Outputs:** experiment results table and discussion.
+**Completion:** all of A, B and C run with the same metrics as Phase 7.
+
+### 4.9 Phase 9: Future Prediction and Hotspot Analysis (Weeks 12-13)
+
+**Objective:** predicted maps in a form people can use.
+
+- **FR-P9.1** Generate predicted LST maps for the next 8, 16 and 24 days from the latest available forecast origin, saved as GeoTIFF.
+- **FR-P9.2** Compute ΔLST = LST_predicted − LST_latest and map expected warming and cooling.
+- **FR-P9.3** Classify predicted temperatures into relative heat categories using fixed, documented thresholds derived from the training-period distribution (default: percentile bands for the same calendar composite window; hotspot = at or above the 90th percentile). Thresholds are configuration and are recorded with each product.
+- **FR-P9.4** Produce monthly and seasonal summaries only from **rolling backtest predictions over the test period** and from the latest forecast. No summary shall imply a prediction beyond the forecast horizon.
+- **FR-P9.5** Every product shall state "model output, not a confirmed future event", the horizon, the issue date, the training period, and an uncertainty indication (for example spread across seeds).
+- **FR-P9.6** Refreshing the forecast with newer MODIS data is a manual batch step; the dashboard states the date of the latest forecast origin.
+
+**Outputs:** `outputs/predicted_maps/`, hotspot and ΔLST maps.
+**Completion:** maps for all three horizons generated for both cities and checked against held-out observations where available.
+
+### 4.10 Phase 10: Interactive Dashboard (Week 14)
+
+**Objective:** explore historical and predicted results without retraining anything.
+
+- **FR-P10.1** Implement the pages listed in Section 3.3 in Streamlit, using Folium for maps, Plotly for charts, and Rasterio and GeoPandas for data access.
+- **FR-P10.2** The dashboard shall load pre-generated rasters and tables. It shall not train or run heavy inference when a page opens.
+- **FR-P10.3** The user shall be able to select Mumbai or Navi Mumbai, view historical maps, view predicted maps and hotspots, and compare the two cities.
+- **FR-P10.4** Every layer shall carry a plain-language description and its limitations, including the prediction target statement of Section 1.3.
+- **FR-P10.5** Colour schemes shall be perceptually uniform and colour-vision-deficiency safe.
+
+**Outputs:** `dashboard/app.py`.
+**Completion:** all six pages render correct maps, charts and predictions on a clean machine.
+
+### 4.11 Phase 11: Testing and Research Validation (Weeks 15-16)
+
+**Objective:** show that the project works scientifically, not only that it produces maps.
+
+- **FR-P11.1** Run the tests of Section 10.
+- **FR-P11.2 Ablation study.** ConvLSTM with (a) temperature only, (b) temperature plus vegetation, (c) temperature plus vegetation plus built-up plus weather, each with at least three seeds, reported with identical metrics. The runs are scheduled in weeks 12-13 alongside Phase 8; reporting is in this phase.
+- **FR-P11.3** Compile all baselines, experiments and ablations into one comparison table with the skill scores of FR-P7.7.
+- **FR-P11.4** Document limitations: target definition, mid-morning LST, coarse weather, static land cover, shared weather across the two cities.
+
+**Completion:** a signed-off test report and a final comparison table.
+
+### 4.12 Phase 12: Documentation and IP Preparation (continuous; final in Weeks 15-16)
+
+**Objective:** documentation maintained from the start, not written in the last week.
+
+- **FR-P12.1** Maintain: dataset sources and licences; preprocessing methodology; mathematical formulas; model architecture; training configurations; experiment results; prediction examples; model evaluation; system architecture; screenshots and version history.
+- **FR-P12.2** Record each dataset's licence and the attribution it requires, and include it in outputs where required.
+- **FR-P12.3 IP review.** Copyright protects original code, documentation and diagrams, not the general idea. Patentability, if pursued, shall be assessed separately against novelty, inventive step, industrial applicability, and Section 3(k), with a prior-art search and advice from the college IP cell or a registered patent professional **before any public disclosure** of potentially patentable details. The project shall not be designed on the assumption that a patent will be granted.
+- **FR-P12.4** The repository carries the GNU GPL. The IP review shall decide whether public release of code and any patent filing are compatible before either happens (OI-9).
+
+**Completion:** documents complete and current; IP review recorded.
 
 ---
 
@@ -297,309 +396,280 @@ Training must run unchanged on the laptop and on a remote GPU server whose speci
 
 ### 5.1 Performance
 
-- **NFR-1.1 [I4]** Map tiles for a pre-computed layer shall load in ≤ 2 s on a 10 Mbps connection.
-- **NFR-1.2 [I4]** Ward-level statistics queries shall return in ≤ 3 s.
-- **NFR-1.3** A full six-city dataset build (Dataset v2, ten layers) shall complete in ≤ 3 hours on a broadband connection. The four-layer build of Increment 1 took about 85 minutes.
-- **NFR-1.4** Inference for one forecast horizon over one city shall complete in ≤ 10 minutes on the training GPU.
-- **NFR-1.5** The reference ConvLSTM and the U-Net baseline shall train on the 8 GB laptop GPU. Foundation-model runs may require the remote server.
+- **NFR-1.1** Each dashboard page shall render within 5 s on a laptop from pre-generated files.
+- **NFR-1.2** Preprocessing the full MODIS series for the model domain shall complete in a single working session on a laptop.
+- **NFR-1.3** ConvLSTM training for one configuration and seed shall fit on the 8 GB laptop GPU or a free Colab GPU.
 
-### 5.2 Accuracy (acceptance targets)
+### 5.2 Accuracy and Validity
 
-- **NFR-2.1** LST forecast RMSE ≤ 2.0 °C (absolute framing) on the held-out test period, and the selected deep model must beat both baselines of FR-4.5. If it does not, the result is reported as a finding with the supporting decomposition (Appendix E).
-- **NFR-2.2** LULC overall accuracy ≥ 85 % and kappa ≥ 0.80, **measured on the verification sample**, not against the weak labels.
-- **NFR-2.3** Derived LST shall be validated against IMD/AWS station observations where available, with correlation and bias reported. **[I3]**
-- **NFR-2.4** Any claim that a foundation model outperforms a simpler model shall be supported by the multi-seed comparison of FR-4.10 and shall state the margin relative to the seed spread.
+- **NFR-2.1** The ConvLSTM shall be evaluated against persistence, seasonal climatology and the Random Forest forecast variant. The numeric RMSE target at +1 period is fixed after Phase 6 and recorded as a controlled change (OI-5). Meeting or missing it is reported honestly.
+- **NFR-2.2** Predictions shall be validated only against later observed MODIS LST on observed (non-gap-filled) pixels.
+- **NFR-2.3** Claims that the ConvLSTM outperforms another method shall state the margin relative to the spread across seeds.
+- **NFR-2.4** No result shall be described as air temperature, heat exposure, or long-range projection.
 
-### 5.3 Reliability and Availability
+### 5.3 Reliability
 
-- **NFR-3.1** Pipeline stages shall be idempotent and resumable after failure. Cities already built are skipped on re-run.
-- **NFR-3.2** A failed scene download shall retry up to 3 times with exponential backoff before being logged and skipped.
-- **NFR-3.3 [I4]** Demo deployment availability target: 95 % during the evaluation period.
-- **NFR-3.4** An interrupted training run shall be resumable without loss of more than one epoch (FR-8.3).
+- **NFR-3.1** Pipeline stages shall be idempotent and resumable. Existing downloads are skipped.
+- **NFR-3.2** Failed downloads retry up to 3 times with exponential backoff before being logged and skipped.
+- **NFR-3.3** Interrupted training shall lose no more than one epoch.
 
-### 5.4 Usability *[I4]*
+### 5.4 Usability
 
-- **NFR-4.1** A first-time user shall be able to view a risk map for the default AOI within three clicks of landing.
-- **NFR-4.2** All map colour schemes shall be perceptually uniform and colour-vision-deficiency safe (e.g. viridis/magma); risk classes shall be distinguishable in greyscale.
-- **NFR-4.3** Every layer shall carry a plain-language description of what it shows and its limitations.
+- **NFR-4.1** A first-time user shall reach a predicted map for either city within three clicks of the Overview page.
+- **NFR-4.2** Every layer shall carry a plain-language description and its limitations.
 
 ### 5.5 Maintainability and Portability
 
-- **NFR-5.1** Code shall be modular (ingest / preprocess / features / models / risk / api / ui) with dependencies pinned in a lockfile. Modules for later increments are created only when those increments begin.
-- **NFR-5.2 [I4]** The full stack shall run via `docker compose up` on any Linux or macOS host.
-- **NFR-5.3** Adding a new sensor, forecaster, or classifier shall require implementing a documented interface, not editing the pipeline core. Sensors implement the `Sensor` interface; forecasters share one input/output contract (FR-4.1).
-- **NFR-5.4** The code shall run on Windows (development) and Linux (server).
+- **NFR-5.1** Code shall be modular, pinned in a lockfile, and tested. Notebooks call functions in `src/`; logic is not duplicated in notebooks.
+- **NFR-5.2** A new data source or model shall be added by implementing a documented interface, not by editing the pipeline core.
+- **NFR-5.3** The code shall run on Windows and on Colab (Linux).
 
 ### 5.6 Security and Privacy
 
-- **NFR-6.1** API keys, Hugging Face tokens, and server credentials shall be supplied via environment variables or the user's SSH configuration, never committed.
-- **NFR-6.2 [I3]** Only aggregated (ward-level or coarser) socio-economic data shall be stored; no individual-level records.
-- **NFR-6.3 [I4]** Write endpoints shall be authenticated and rate-limited.
+- **NFR-6.1** Earthdata, Copernicus and any other credentials shall be supplied through environment variables or user configuration files outside the repository, never committed.
+- **NFR-6.2** No personal data is collected or stored.
 
 ### 5.7 Ethical and Publication Requirements
 
 - **NFR-7.1** Every published map shall state its date range, sensor, spatial resolution, and uncertainty.
-- **NFR-7.2 [I3]** Vulnerability indicators and their weights shall be disclosed, since they encode value judgements that affect which neighbourhoods appear at risk.
-- **NFR-7.3** Outputs shall be labelled as research products, not operational warnings.
-- **NFR-7.4** Data, code, and trained weights shall be released under an open licence on acceptance of the paper, subject to institutional approval. The licences of all pretrained weights and label products used shall be checked before release.
-- **NFR-7.5** Land-cover maps shall disclose their label source, the weak-label method, and the verification-sample accuracy, and shall not present weak-label agreement as accuracy.
+- **NFR-7.2** Outputs are research products, not operational warnings.
+- **NFR-7.3** Attribution and licences of all datasets shall be honoured (FR-P12.2).
 
 ### 5.8 Reproducibility
 
-- **NFR-8.1** Every run shall be reproducible from its run directory: configuration, seed, and dataset hash. Residual GPU non-determinism shall be documented, and results compared across laptop and server within a stated tolerance (V9).
-- **NFR-8.2** Model comparisons shall use the same seeds across candidates.
+- **NFR-8.1** Every result shall be reproducible from its configuration, seed, dataset catalogue and run directory.
+- **NFR-8.2** Comparisons across models shall use the same seeds and splits.
 
 ---
 
 ## 6. Data Requirements
 
-| Dataset | Source | Resolution | Temporal | Use | Status |
-|---|---|---|---|---|---|
-| Landsat 8/9 C2 L2 (ST, SR) | USGS via Planetary Computer | 30 m (ST 100 m resampled) | 16-day, 2013- | LST, reflectance, fallback indices | Built |
-| Sentinel-2 L2A | Copernicus via Planetary Computer | 10-20 m, averaged to 30 m | 5-day, 2017- | Reflectance, indices | Built |
-| ESA WorldCover (or equivalent) | ESA | 10 m | specific release years | Weak LULC labels | I2 |
-| Verification sample | Team-labelled on high-resolution imagery | points | one reference year | LULC accuracy | I2 |
-| MODIS MOD11A2/MYD11A2 | NASA | 1 km | 8-day, 2000- | Long-term trend | Deferred |
-| Copernicus DEM / SRTM | ESA / USGS | 30 m | static | Terrain covariate | I3 |
-| Ward boundaries | Municipal corporation / Survey of India | vector | static | Aggregation units | I3 |
-| Population | WorldPop / Census of India | 100 m / ward | decadal | Exposure | I3 |
-| Socio-economic indicators | Census / municipal open data | ward | decadal | Vulnerability | I3 |
-| Building footprints | OSM / open buildings | vector | static | Built density | I3 |
-| Station air temperature | IMD / local AWS | point | daily | Validation | I3 |
+| Dataset | Resolution | Cadence / period | Use | Phase |
+|---|---|---|---|---|
+| MODIS MOD11A2 v6.1 (day LST, QC) | 1 km | 8-day, 2001-latest | Primary prediction series | 2, 3 |
+| MODIS-cadence vegetation product (OI-2) | 500 m-1 km | 8- or 16-day, 2001-latest | Time-varying vegetation channel | 2, 4 |
+| Landsat 8/9 C2 L2 (ST, SR) | 30 m grid (thermal 100 m native) | 16-day, 2013-latest, selected years, Mar-May | Detailed LST maps, NDVI/NDBI/NDWI | 2, 4, 5 |
+| ESA WorldCover | 10 m | 2020, 2021 (static) | Land-cover fractions | 2, 4 |
+| ERA5-Land | about 9 km | hourly, 2001-latest | Weather channels | 2, 4 |
+| Copernicus DEM / SRTM | 30 m | static | Elevation, distance features | 4 |
+| Boundaries | vector | static | Study areas | 1 |
 
-**Study areas:** Mumbai, Delhi, Ahmedabad, Nagpur, Hyderabad, Chennai; 40 × 40 km each (1333 × 1333 px at 30 m); per-city UTM zone; years 2013-2025; March-May.
+**Study area:** Mumbai and Navi Mumbai polygons; buffered model domain for model input; EPSG:32643.
 
-**Storage estimate:** Dataset v1 (four layers) measured about 400 MB per city (`mumbai.nc`, 397 MB). Dataset v2 (ten layers) is estimated at about 1 GB per city, roughly 6 GB for six cities, plus a scene cache. This is an estimate until the rebuild.
+**Storage:** the clipped MODIS series is small; Landsat for selected years dominates. A measured estimate replaces this sentence after Phase 2.
 
 ---
 
 ## 7. System Models
 
-### 7.1 Pipeline (DFD Level 1)
+### 7.1 Pipeline
 
 ```
-[Cities + year range]
-      ↓
-(1) Ingest ──→ [Scene catalogue] ──→ (2) Preprocess ──→ [Analysis-ready cube v2]
-                                                           (LST + indices + 6 bands)
-                                                              ↓
-                                    (3) Feature derivation → [LST, indices, SUHI]
-                                                              ↓
-                        ┌─────────────────────────────────────┴──────────┐
-                        ↓                                                ↓
-        (4a) LST anomaly forecast                          (4b) LULC classification
-   ConvLSTM · SimVP · Prithvi-EO-2.0                  U-Net · TerraMind / Prithvi
-        + scene-level component                       weak labels → verification sample
-                        └─────────────────┬──────────────────────────────┘
-                                          ↓
-                              [Predicted hazard surfaces + LULC maps]
-                                          ↓                     (below: I3 / I4)
-      [Exposure + Vulnerability] → (5) Risk index engine → [HRI rasters + ward stats]
-                                          ↓
-                              (6) API + Web map + Exports
+[Boundaries + grids] ─► (2) Acquire ─► [Raw data + catalogue]
+                                         ↓
+                         (3) Preprocess ─► [Aligned rasters + validity masks]
+                                         ↓
+                         (4) Features ──► [Feature stacks]
+                                         ↓
+         ┌───────────────────────────────┼────────────────────────────┐
+         ↓                               ↓                            ↓
+ (5) Historical analysis      (6) Baselines: persistence,   (7) ConvLSTM sequences
+                                  climatology, Random Forest         ↓
+                                         └──────────────► (8) Two-city experiments
+                                                                      ↓
+                                                  (9) Predicted maps, ΔLST, hotspots
+                                                                      ↓
+                                                   (10) Streamlit dashboard
 ```
 
-### 7.2 Training execution flow (I2)
-
-```
-laptop:  build_dataset → cube v2 + manifest ──rsync──► server: verify hash
-laptop:  small runs, debugging                          server: train (headless, resumable)
-laptop:  ◄── run directory (config, metrics, checkpoint, manifest) ──┘
-```
-
-### 7.3 Primary Use Cases
+### 7.2 Use Cases
 
 | ID | Actor | Use case | Main flow |
 |---|---|---|---|
-| UC-1 | Researcher | Build the dataset for the study cities | Edit configuration → run build → catalogue scenes → composites → cube + manifest |
-| UC-2 | Researcher | Train and compare candidate models | Select dataset version + config → train ≥ 3 seeds per candidate → metrics logged → comparison table |
-| UC-3 | Researcher | Generate a future scenario | Select model + horizon → infer → write rasters + uncertainty |
-| UC-4 | Planner | Identify high-risk wards for a future year *[I4]* | Open map → select year → open hotspot table → export PDF |
-| UC-5 | Planner | Compare mitigation framing *[I4]* | Compare observed vs predicted year side by side |
-| UC-6 | Visitor | Explore current heat map *[I4]* | Land on default AOI → toggle layers → click a location for its time series |
-| UC-7 | Researcher | Train on the remote GPU server | Probe server → transfer cube + verify hash → launch headless run → resume if interrupted → copy run directory back |
-| UC-8 | Researcher | Measure land-cover accuracy | Draw stratified sample → label blind → compute accuracy and kappa against model output |
+| UC-1 | Researcher | Build the dataset | Configure → download → preprocess → feature stack |
+| UC-2 | Researcher | Train and compare models | Select config and seeds → train → metrics and error maps |
+| UC-3 | Researcher | Run the two-city experiments | Run A, B, C → results table |
+| UC-4 | Researcher | Refresh the forecast | Add new MODIS composites → predict → regenerate dashboard files |
+| UC-5 | Reviewer / planner | Explore historical heat | Select city → historical page → maps and trends |
+| UC-6 | Reviewer / planner | View predicted hotspots | Select city → Prediction page → horizon → hotspot map |
+| UC-7 | Reviewer | Inspect model validity | Model Evaluation page → baselines, errors, ablations |
 
 ---
 
-## 8. Project Plan
+## 8. Repository Layout
 
-The original 35-week plan is retained. Status is as of 9 November 2026.
+The target layout follows the plan. Existing directories (`config/`, `scripts/`, `tests/`, `runs/`, `docs/`) are kept; `src/uhrm/` is extended rather than replaced.
 
-| Phase | Duration | Deliverables | Status |
-|---|---|---|---|
-| P1 Literature review + problem formulation | Weeks 1-4 | Survey, gap statement, finalized AOI | AOI fixed (six cities) |
-| P2 Data acquisition + analysis-ready stack | Weeks 5-10 | Scene catalogue, preprocessed stack, EDA report | Pipeline built; Dataset v2 rebuild pending |
-| P3 Feature derivation + baselines | Weeks 11-15 | LST/SUHI/LULC layers, baseline metrics | LST, indices, baselines done; LULC pending |
-| P4 Deep model development | Weeks 16-22 | Candidate models, ablations, benchmark table | **Current: Increment 2** |
-| P5 Risk index + validation | Weeks 23-26 | HRI maps, sensitivity analysis, station validation | Not started (I3) |
-| P6 Web application | Weeks 27-30 | Deployed map + API + exports | Not started (I4) |
-| P7 Paper writing + submission | Weeks 28-34 | Manuscript draft, figures, code release | Not started |
-| P8 Report, demo, viva | Weeks 33-35 | Final report, presentation, defence | Not started |
-
-**Increment 2 work order:**
-
-1. Run the server probe (FR-8.7) and close OI-1.
-2. Extend the cube to Dataset v2 and rebuild all six cities (the five missing cubes must be rebuilt regardless).
-3. Implement the anomaly target and re-baseline persistence and linear trend in both framings.
-4. Train ConvLSTM and SimVP (laptop or server), then Prithvi-EO-2.0 (server), three seeds each.
-5. Fetch weak labels, draw and label the verification sample, train U-Net, then the foundation-model classifier.
-6. Select models per FR-4.10 and record the benchmark table.
-
-**Milestone gates:** M1 stack ready (end P2) · M2 baseline beaten, or its failure explained (end P4) · M3 validated risk maps (end P5) · M4 demo live (end P6) · M5 paper submitted (end P7).
-
----
-
-## 9. Verification and Validation
-
-- **V1 Unit tests** for index formulas, sensor scaling (including the Sentinel-2 2022 offset), reprojection, and masking against hand-computed fixtures.
-- **V2 Integration test** running the full dataset-build-to-training path on a synthetic cube offline, where the model must beat persistence. A synthetic win demonstrates correct wiring only and is never cited as model skill.
-- **V3 Model validation** on a temporally held-out period, with all baselines run on identical splits, in anomaly and absolute framings.
-- **V4 Ground validation** against IMD/AWS station temperatures where co-located observations exist. **[I3]**
-- **V5 Spatial cross-validation:** leave one city out (train on five, test on the sixth) for the forecaster; tile hold-out for the classifier.
-- **V6 Reproducibility check:** regenerate one published figure end-to-end from its run ID on a clean machine.
-- **V7 Usability walkthrough** with the faculty guide against UC-4 and UC-6. **[I4]**
-- **V8 Label accuracy check:** LULC accuracy and kappa computed on the verification sample, with the labelling done blind to model output.
-- **V9 Remote parity check:** the same configuration on a small subset run on the laptop and the server produces metrics within a stated tolerance; resume-from-checkpoint is exercised by interrupting a run deliberately.
-- **V10 Leakage test:** an explicit test asserts no target year appears in two splits, no training target postdates a test target, and normalization statistics are independent of validation and test years.
+```
+UrbanHeatPrediction/
+├── data/
+│   ├── boundaries/        mumbai.geojson, navi_mumbai.geojson, combined_study_area.geojson
+│   ├── raw/               modis/, landsat/, worldcover/, era5/
+│   ├── processed/
+│   └── sequences/
+├── notebooks/
+│   ├── 01_study_area.ipynb          06_random_forest.ipynb
+│   ├── 02_data_acquisition.ipynb    07_sequence_preparation.ipynb
+│   ├── 03_preprocessing.ipynb       08_convlstm_training.ipynb
+│   ├── 04_feature_engineering.ipynb 09_prediction_evaluation.ipynb
+│   └── 05_historical_analysis.ipynb 10_city_comparison.ipynb
+├── models/                random_forest/, convlstm/
+├── outputs/               historical_maps/, predicted_maps/, charts/, evaluation/
+├── dashboard/app.py
+├── src/uhrm/              reusable code called by notebooks and scripts
+├── config/  scripts/  tests/  runs/  docs/
+├── requirements.txt
+└── README.md
+```
 
 ---
 
-## 10. Risks and Mitigations
+## 9. Project Plan
+
+16 weeks from the start of Phase 1. Calendar dates are fixed once the deadline is known (OI-7).
+
+| Weeks | Work | Phases |
+|---|---|---|
+| 1-2 | Study areas; dataset acquisition; first-milestone maps | 1, 2 |
+| 3-4 | Preprocessing; feature engineering | 3, 4 |
+| 5-6 | Historical analysis: hotspots, city comparison, environmental relationships | 5 |
+| 7-8 | Random Forest, persistence, climatology baselines | 6 |
+| 9-11 | Sequence preparation, ConvLSTM training and validation | 7 |
+| 12-13 | Two-city experiments; forecasting and hotspots; ablation runs | 8, 9, 11 (runs) |
+| 14 | Dashboard | 10 |
+| 15-16 | Testing, final report, presentation, IP review | 11, 12 |
+
+Phase 12 documentation runs throughout. If data collection or ConvLSTM training overruns, reduce dashboard polish, not validation.
+
+**Milestone gates:** M1 first-milestone maps correct (Week 2) · M2 aligned dataset and feature stack (Week 4) · M3 research baseline analysis (Week 6) · M4 baselines reported (Week 8) · M5 ConvLSTM evaluated against baselines (Week 11) · M6 experiments and predictions done (Week 13) · M7 dashboard working (Week 14) · M8 validated and documented (Week 16).
+
+---
+
+## 10. Verification and Validation
+
+| Test | What it verifies | Phase |
+|---|---|---|
+| Data quality | Missing and invalid pixels are handled; masks carried through | 3 |
+| Preprocessing | Scaling matches hand-computed values; layers align spatially | 3 |
+| Leakage | No future observation in any training window; no target year in two splits; normalisation uses training years only | 7 |
+| Model | Predicted LST is close to observed LST on held-out years | 7 |
+| Baseline comparison | ConvLSTM versus Random Forest, persistence and climatology, with skill scores | 7 |
+| Cross-city | Transfer experiments obey FR-P8.4 and FR-P8.5; no held-out-city cell reaches training | 8 |
+| Ablation | Contribution of each input group | 11 |
+| Reproducibility | A published figure regenerates from its run directory on a clean machine | 11 |
+| Dashboard | Maps, charts and predictions display correctly on all pages | 10, 11 |
+
+Unit and integration tests run offline. A synthetic series with a known pattern is used to confirm the training code works; a synthetic result demonstrates wiring only and is never cited as model skill.
+
+---
+
+## 11. Risks and Mitigations
 
 | Risk | Impact | Mitigation |
 |---|---|---|
-| Monsoon cloud cover leaves too few usable scenes | High | Seasonal compositing; focus on pre-monsoon (Mar-May); Chennai flagged as the weakest city |
-| Deep model does not beat simple baselines | High | Anomaly target (FR-4.8) removes the unpredictable scene offset; multi-seed comparison (FR-4.10); if still no gain, report honestly with the decomposition of Appendix E |
-| Anomaly framing does not close the gap | High | Fall back to the alternatives recorded in Appendix E (scene-level covariate, larger patches, a better-posed target such as SUHI or a multi-year smoothed level) |
-| Large pretrained model overfits 13 annual steps × 6 cities | Medium | Frozen encoder with small trained head; compare against the small models; treat a loss as a finding |
-| Pretraining resolution/band mismatch (C10) | Medium | Prefer Prithvi (30 m HLS) for forecasting; for TerraMind, test with and without the shift and report it |
-| Weak labels contain errors that inflate or deflate accuracy | High | Accuracy measured only on the verification sample (FR-4.9); weak-label agreement reported separately |
-| Verification sample too small or biased | Medium | ≥ 300 points, stratified, ≥ 30 per class; unevaluable classes reported as such |
-| Remote server specification or access method unknown | High | Server probe (FR-8.7); FR-8 written to hold under SSH, notebook, or scheduler; laptop remains a complete fallback for the baselines |
-| Training interrupted on a shared server | Medium | Per-epoch full checkpoints and resume flag (FR-8.3) |
-| Only 10 target years makes results seed-sensitive | Medium | ≥ 3 seeds, mean ± std; leave-one-city-out check (V5) |
-| Sensor change at 2017 creates an artificial step | Medium | `index_source` recorded per year (FR-2.8); report results with and without pre-2017 years if the effect is visible |
-| Cubes for five cities are missing from disk | Medium | Rebuild as part of Dataset v2; builds are resumable and skip finished cities |
-| Insufficient ground-truth for validation | Medium | Held-out satellite LST as primary; state station-validation limits explicitly |
-| Vulnerability data unavailable at useful resolution | Medium | Use proxies and document the substitution [I3] |
-| Scope creep from adding sensors/models | Medium | Scope frozen by Section 1.5; extensions become future work |
-| Publication timeline slips | Medium | Draft paper in parallel from P4; target a venue with rolling submission |
+| Very few 1 km pixels per city (C1) | High | Buffered model domain; metrics masked to city polygons; report cell counts; state limited statistical power |
+| Monsoon cloud leaves many composites mostly invalid (C3) | High | Validity masks and masked loss; minimum valid fraction; metrics per season; never fill targets |
+| Seasonal cycle makes the task look easy (C4) | High | Seasonal climatology baseline; skill scores; R² on anomalies |
+| Time-varying vegetation unavailable for 2001-2012 from Landsat (C8) | High | MODIS-cadence vegetation product (OI-2); Landsat indices only for 2013-onward work |
+| Land cover is static and cannot show urban growth (C9) | Medium | Landsat index change for development; label WorldCover as static |
+| Cross-city result is optimistic because both cities share weather (C7) | High | Chronological transfer design; no spatial contamination (FR-P8.4, P8.5); state the limit |
+| ConvLSTM does not beat the simpler methods | High | Report honestly; ablations; the finding is a result |
+| Boundary definition for Navi Mumbai is ambiguous | Medium | Document authority and choice (OI-1) |
+| Coastal mixed pixels distort LST | Medium | Flag by water fraction; consistent inclusion rule |
+| Earthdata or CDS access setup delays data | Medium | Start account setup in Week 1; test single-date download first |
+| Colab session limits interrupt training | Medium | Per-epoch checkpoints and resume (FR-P7.9) |
+| Overclaiming future prediction | High | Target statement (Section 1.3); NFR-2.4; no 2030 claim |
+| IP route conflicts with open-source release (OI-9) | Medium | IP review before any public disclosure |
+| Schedule slips | Medium | Cut dashboard polish before validation |
 
 ---
 
-## 11. Future Enhancements
+## 12. Future Enhancements
 
-- LULC change prediction (CA-Markov vs deep) feeding the LST forecast as a covariate (FR-4.2).
-- Seasonal rather than annual composites, if non-monsoon seasons can be made usable, to raise the number of time steps.
-- Downscaling MODIS to 30 m via spatio-temporal fusion for daily hazard.
-- Physics-informed models coupling LST with urban canopy or WRF-UCM outputs.
-- Mitigation scenario simulation (cool roofs, tree planting, added water) with predicted LST deltas.
-- Night-time thermal (ECOSTRESS) for nocturnal heat stress.
-- Health-outcome coupling with hospital admission data where ethically obtainable.
-- Longer history from Landsat 5/7 (1988-), accepting the sensor-generation caveat.
+- A scenario-based long-term projection (for example 2030) using future climate and land-use assumptions, as a separate study after near-term forecasting is proven.
+- Afternoon-peak analysis using MODIS Aqua (MYD11A2) alongside Terra.
+- Additional cities, which would also strengthen the cross-city generalisation test.
+- Heat risk index combining hazard with exposure and vulnerability data.
+- Higher-resolution thermal products and night-time thermal (ECOSTRESS).
+- Mitigation scenario simulation (cool roofs, tree planting, water bodies).
 
-## 12. Open Items
+## 13. Open Items
 
 | ID | Item | Resolves with |
 |---|---|---|
-| OI-1 | Remote server GPU, VRAM, RAM, disk, OS, and access method are unknown | Server probe output (FR-8.7) |
-| OI-2 | Exact scene-level definition for the anomaly target (scene mean vs rural reference; land-only mask) | I2 design specification |
-| OI-3 | Which years the weak-label product covers, and whether a per-year source is available for all six cities | Label source check before FR-4.9 training |
-| OI-4 | Licence terms of the chosen pretrained weights and label products | Before release (NFR-7.4) |
-| OI-5 | Deadline and review expectations, which determine whether LULC change prediction can enter scope | Team decision |
+| OI-1 | Which Navi Mumbai boundary (municipal corporation versus planning authority) and which source | Phase 1 |
+| OI-2 | Source of a vegetation channel at MODIS cadence for 2001-2025 (for example a 16-day 1 km vegetation product or an 8-day reflectance product) | Phase 2 |
+| OI-3 | Model-domain buffer size and patch size given the cell counts | Phase 1 |
+| OI-4 | Final end year of the historical series | Phase 2 |
+| OI-5 | Numeric RMSE target for NFR-2.1 | After Phase 6 |
+| OI-6 | Verified access path for MODIS and ERA5-Land (Earthdata or mirror; CDS) | Week 1 |
+| OI-7 | Project deadline and calendar start date for the 16 weeks | Team |
+| OI-8 | Compute target: laptop, Colab, or the optional GPU server | Before Phase 7 |
+| OI-9 | IP route: open-source release (GPL) versus patent filing | Phase 12 |
 
 ---
 
-## Appendix A — Requirements Traceability (abridged)
+## Appendix A: Traceability
 
-| Objective | Requirements | Verification |
-|---|---|---|
-| Map current urban heat | FR-1, FR-2, FR-3 | V1, V2, V4 |
-| Predict future heat | FR-4.1-4.8, FR-4.10 | V3, V5, V10 |
-| Classify land cover | FR-1.6, FR-3.4, FR-4.9 | V8 |
-| Train on available hardware | FR-8 | V9 |
-| Quantify risk, not just heat | FR-5 | V4, sensitivity analysis (FR-5.6) |
-| Make results usable | FR-6, NFR-4 | V7 |
-| Make results publishable | FR-7, NFR-7, NFR-8 | V6 |
+| Objective | Phases | Key requirements | Verification |
+|---|---|---|---|
+| 1 Analyse the past | 1-5 | FR-P5.1 to P5.8 | Phase 5 reproducibility |
+| 2 Understand the present | 4-6 | FR-P5.4, P5.5, P6.1(a), P6.5 | Phase 5, 6 reports |
+| 3 Predict the future | 6-9 | FR-P7.x, P8.x, P9.x, NFR-2.x | Leakage, baseline, cross-city, ablation tests |
+| 4 Dashboard | 10 | FR-P10.x | Dashboard test |
 
-## Appendix B — Technology Stack
+## Appendix B: Technology Stack
 
-| Layer | Choice |
+| Component | Technology |
 |---|---|
-| Data access | Microsoft Planetary Computer via `pystac-client`, `planetary-computer`, `odc-stac`, `odc-geo` (Google Earth Engine and `stackstac` not used; see Appendix D) |
-| Raster processing | `rasterio`, `xarray`, `netcdf4`, `pyproj` |
-| Environment | Python 3.12, `uv`, `uv.lock`; PyTorch CUDA 12.6 build |
-| Deep learning | PyTorch; `segmentation-models-pytorch` (U-Net); TerraTorch (Prithvi-EO-2.0, TerraMind); SimVP implemented or adapted from OpenSTL |
-| Classical baselines | scikit-learn, XGBoost (should) |
-| Experiment tracking | Run-directory manifests (MLflow or W&B optional later) |
-| Training compute | Laptop RTX 4060 (8 GB) and a remote GPU server (OI-1) |
-| Backend *[I4]* | FastAPI, `titiler` for COG tiling |
-| Database *[I3]* | PostgreSQL + PostGIS |
-| Frontend *[I4]* | React + MapLibre GL, deck.gl, Recharts |
-| Deployment *[I4]* | Docker Compose; Hugging Face Spaces / Render / institutional server |
+| Language and environment | Python 3.12, `uv`, lockfile |
+| Satellite data | MODIS MOD11A2, Landsat 8/9 |
+| Land cover | ESA WorldCover |
+| Weather | ERA5-Land |
+| GIS | QGIS, GeoPandas |
+| Raster processing | Rasterio, GDAL, xarray |
+| Traditional ML | scikit-learn |
+| Deep learning | PyTorch (existing code); ConvLSTM |
+| Dashboard | Streamlit, Folium, Plotly |
+| Storage | GeoTIFF, CSV, NumPy |
+| Compute | Laptop RTX 4060 (8 GB) or Google Colab |
 
-## Appendix C — Candidate Model Register
+React, FastAPI, PostGIS, container orchestration, multiple deep-learning architectures and cloud deployment are not needed for the first working version.
 
-Selection follows FR-4.10. Parameter counts are omitted on purpose: they size compute, they are not selection criteria.
-
-**Job 1: LST anomaly forecasting**
-
-| ID | Model | Idea | Compute | Role |
-|---|---|---|---|---|
-| F1 | ConvLSTM (scaled: 2 stacked layers, more memory channels, larger patches) | Recurrent convolution; the Increment 1 model, fixed | Laptop | Reference |
-| F2 | SimVP | Convolutional encoder, translator, decoder; no recurrence; light to train | Laptop or server | Main challenger |
-| F3 | Prithvi-EO-2.0 (300M) | NASA/IBM model pretrained on HLS (Landsat + Sentinel-2); frozen encoder, trained decoder; LST history injected through a small trainable covariate branch because LST is not a pretraining band | Server | Foundation-model arm |
-| B1 | Persistence | Next year equals last year | Any | Baseline |
-| B2 | Per-pixel linear trend | OLS per pixel | Any | Baseline |
-| B3 | Random Forest / XGBoost | Same features, tabular | Any | Baseline (should) |
-
-Rationale: the closest published comparison (vegetation forecasting on EarthNet2021) found SimVP and PredRNN above ConvLSTM, and dropped the Earthformer transformer because of its cost. With 13 annual steps per city, a 300M-parameter model is at risk of overfitting; F3 is included so that the result, whichever way it falls, is measured rather than assumed.
-
-**Job 2: LULC classification**
-
-| ID | Model | Idea | Compute | Role |
-|---|---|---|---|---|
-| L1 | U-Net, ResNet-34 encoder (ImageNet init) | Standard supervised segmentation | Laptop | Baseline |
-| L2 | TerraMind-1.0 (tiny/small/base) or Prithvi-EO-2.0 + segmentation head | Foundation-model encoder via TerraTorch | Server | Foundation-model arm |
-
-Rationale: the developers' PANGAEA benchmark reports TerraMind ahead of task-specific U-Nets, while an independent analysis puts the margin at about 2 mIoU points. Neither figure was measured on this project's data; L1 is the bar L2 must clear on the verification sample.
-
-## Appendix D — Changes from Version 1.0
+## Appendix C: Changes from Version 1.1
 
 | Change | Reason |
 |---|---|
-| Google Earth Engine replaced by Planetary Computer STAC (`odc-stac`) | No academic-account dependency or export quota; fully local and reproducible. `stackstac` was rejected because it breaks against NumPy 2 and pandas 3. |
-| Study area changed from one metropolitan AOI to six cities at 40 × 40 km | Pooling cities multiplies the training examples and tests generalization. |
-| MODIS deferred | A 1 km product on a 30 m grid needs a fusion method of its own. |
-| Sentinel-2 added; both sensors on one 30 m grid; Landsat supplies LST only | Sentinel-2 has no thermal band. Averaging 10 m reflectance to 30 m avoids inventing thermal detail. |
-| Study period 2013-2025, pre-monsoon only | Landsat 8 launch gives a single sensor generation; June-September is unusable in every city. |
-| Reflectance bands preserved in the cube (FR-2.7) | Pretrained models and albedo need raw bands; indices alone cannot be inverted. |
-| Forecast target changed to LST anomaly (FR-4.8) | The Increment 1 result showed absolute-LST error dominated by an unobservable scene-wide offset (C8, Appendix E). |
-| Candidate-model register and selection protocol (FR-4.1, FR-4.10, Appendix C) | Model choice made on evidence and a fixed protocol rather than preference. |
-| LULC classification brought into I2, evaluated on a team-labelled verification sample (FR-4.9) | Weak labels alone would make the accuracy figure a measure of agreement with another map. |
-| LULC change prediction, risk index, web app, MODIS, station validation moved to later increments or future work | Keeps the current scope to what can be finished and defended. |
-| Horizons +5 and +10 years labelled unvalidated (FR-4.3) | A 13-year series cannot validate them. |
-| Remote GPU training requirements added (FR-8) | A GPU server is available; its specification is unknown, so the requirements must hold under any access method. |
-| Python pinned to 3.12 | PyTorch, rasterio, and odc-stac publish no wheels for 3.13 or 3.14. |
-| Run-directory manifests replace MLflow for now (FR-4.6) | No multi-service deployment yet. |
+| Six 40 km city boxes replaced by Mumbai and Navi Mumbai polygons | Boundary-accurate study areas; two connected, differently developed regions |
+| MODIS MOD11A2 added as the primary prediction dataset (2001-) | Long, regular 8-day series suitable for sequence learning; Landsat alone is too sparse |
+| Landsat demoted to detailed analysis and indices | Thermal is 100 m native; 16-day revisit and cloud gaps |
+| Sentinel-2 ingestion dropped | Not in the revised data plan; Landsat reflectance supplies the indices |
+| ERA5-Land weather added | Regional meteorological context |
+| ESA WorldCover used directly as land cover | The supervised classifier, U-Net, TerraMind and Prithvi comparison are removed |
+| Heat Risk Index removed (moved to Future Enhancements) | Not among the three revised objectives |
+| Future prediction promoted to a core objective, defined as near-term LST forecasting | Prediction target defined precisely; no long-range claim |
+| Random Forest, persistence and seasonal climatology baselines | Honest comparison; climatology added because of strong seasonality |
+| Two-city experiments A, B, C added | Research contribution |
+| Ablation study added | Measures input contributions |
+| Streamlit dashboard replaces React, FastAPI, PostGIS | Sufficient for the project; far less to build |
+| Remote GPU requirements (FR-8) removed | Dataset is small; laptop or Colab suffices; server remains optional |
+| Requirements reorganised into twelve phases and a 16-week plan | Each phase produces a working output |
+| Increments I1-I4 retired | Replaced by phases |
 
-## Appendix E — Increment 1 Findings
+## Appendix D: Relationship to the Existing Implementation
 
-Recorded so the reasons for the Increment 2 changes are on file.
+The repository contains an Increment 1 pipeline built for the earlier plan. It is not discarded, but its role changes.
 
-**Pooled six-city run** (`data/results/results.json`), RMSE in °C on held-out test years, absolute-LST framing:
+| Component | Status |
+|---|---|
+| Landsat scaling and QA masking (`src/uhrm/sensors.py`) | Reused in Phases 3-5 |
+| STAC acquisition and compositing (`src/uhrm/download.py`) | Reused for Landsat; a MODIS and ERA5 acquirer is new work |
+| ConvLSTM (`src/uhrm/model.py`) | Starting point for Phase 7; changes needed for validity-mask input, multi-step output and masked loss |
+| Training loop, splits, scaler, baselines (`src/uhrm/train.py`, `dataset.py`) | Starting point; climatology baseline and mask handling are new |
+| Config validation of split ordering (`src/uhrm/config.py`) | Reused |
+| Six-city cubes, Sentinel-2 path, ten-layer cube design | Superseded |
+| Existing runs and `data/results/` | Archival; not evidence for the new plan |
 
-| Method | RMSE (°C) | MAE (°C) | R² |
-|---|---|---|---|
-| ConvLSTM | 1.635 | 1.243 | 0.943 |
-| Persistence ("no change") | 1.659 | 1.195 | 0.941 |
-| Per-pixel linear trend | 2.964 | 2.249 | 0.812 |
+## Appendix E: Lessons from Increment 1
 
-The ConvLSTM is ahead of persistence by about 0.02 °C RMSE and behind it on MAE. This is a near tie and is not accepted as satisfying NFR-2.1 without the multi-seed comparison of FR-4.10. The cubes behind this run are not all on disk, so the run cannot currently be reproduced (V6).
-
-**Diagnosis (Mumbai tile, Increment 1 analysis).** The annual mean LST swings by up to 4 °C between consecutive years (2020: 40.0 °C, 2021: 36.0 °C). For the 2023 to 2024 step, persistence RMSE of 2.41 °C splits into a scene-wide offset of 2.17 °C and a spatial residual of 1.04 °C. Most of the error is therefore a single scalar determined by which dates were cloud-free, which a model that sees only 64 × 64 patches cannot predict. This is the basis of constraint C8 and requirement FR-4.8.
-
-**Alternatives recorded for Increment 2 if the anomaly framing is not sufficient:** supply the scene level as an input channel; use larger patches; forecast SUHI intensity or a multi-year smoothed level instead of the single-year composite.
-
-**A synthetic-cube integration run** (RMSE 0.21 °C) beats both baselines. It confirms the training code is wired correctly and says nothing about performance on real imagery.
+Annual Landsat composites over Mumbai showed year-to-year swings of up to 4 °C in the city-wide mean that came from which dates were cloud-free, not from real change, and the ConvLSTM only tied the persistence baseline (1.635 °C versus 1.659 °C RMSE on a pooled run). Three consequences carry into this version: validity masks and honest handling of cloud gaps (FR-P3.4), strong simple baselines including climatology (FR-P6.2), and reporting sampling noise with every trend (FR-P5.8).
