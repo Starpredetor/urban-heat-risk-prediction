@@ -558,7 +558,7 @@ Python libraries for raster, vector, ML and visualisation work (Appendix B); QGI
 
 ## 8. Repository Layout
 
-The target layout follows the plan. Existing directories (`config/`, `scripts/`, `tests/`, `runs/`, `docs/`) are kept; `src/uhrm/` is extended rather than replaced. Stage A adds `notebooks/00_colab_setup.ipynb` (install, mount Drive, authenticate, set mode) and `config/modes/colab.yaml` and `offline.yaml`. In Colab, `data/` lives on Google Drive and is downloaded to the laptop for Stage B.
+The target layout follows the plan. Existing directories (`config/`, `scripts/`, `tests/`, `runs/`, `docs/`) are kept; `src/uhrm/` is extended rather than replaced. Stage A uses a single combined notebook, `notebooks/uhrm_prototype.ipynb` (setup, access check, boundaries, grid, acquisition and first-milestone map in one file, because Colab works on one file at a time), plus `config/modes/colab.yaml` and `offline.yaml`. The numbered notebooks above describe the Stage B split and are optional. In Colab, `data/` lives on Google Drive and is downloaded to the laptop for Stage B.
 
 ```
 UrbanHeatPrediction/
