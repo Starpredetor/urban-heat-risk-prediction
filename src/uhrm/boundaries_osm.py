@@ -64,6 +64,24 @@ def pick(features: list[dict], osm_ids) -> list[dict]:
     return chosen
 
 
+def pick_largest_by_prefix(features: list[dict], prefixes) -> list[dict]:
+    """For each name prefix, the largest polygon whose display name starts with it.
+
+    Lets a notebook choose boundaries without a manual step. Points and
+    buildings are skipped because only polygons qualify. Raises LookupError if a
+    prefix matches nothing, so the caller can fall back to choosing ids by hand.
+    """
+    chosen = []
+    for prefix in prefixes:
+        matches = [f for f in features
+                   if f["properties"].get("display_name", "").lower().startswith(prefix.lower())
+                   and shape(f["geometry"]).geom_type in ("Polygon", "MultiPolygon")]
+        if not matches:
+            raise LookupError(f"no polygon whose name starts with {prefix!r}; set the osm ids by hand")
+        chosen.append(max(matches, key=lambda f: approx_area_km2(shape(f["geometry"]))))
+    return chosen
+
+
 def save_boundary(features: list[dict], path, *, query: str) -> Path:
     """Union the chosen polygons and save them as GeoJSON plus a provenance sidecar."""
     if not features:

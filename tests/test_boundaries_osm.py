@@ -5,7 +5,7 @@ import json
 import pytest
 from shapely.geometry import Point, box, mapping
 
-from uhrm.boundaries_osm import pick, save_boundary
+from uhrm.boundaries_osm import pick, pick_largest_by_prefix, save_boundary
 
 
 def feature(osm_id, geom, name="x"):
@@ -45,3 +45,18 @@ def test_pick_returns_requested_and_fails_loudly_on_unknown_ids():
     assert pick([a, b], [2]) == [b]
     with pytest.raises(KeyError):
         pick([a, b], [3])
+
+
+def test_pick_largest_by_prefix_takes_the_bigger_polygon_per_prefix():
+    small = feature(1, box(72.80, 19.00, 72.82, 19.02), "Mumbai City, Maharashtra")
+    big = feature(2, box(72.80, 19.00, 72.90, 19.10), "mumbai city district, Maharashtra")
+    suburban = feature(3, box(72.80, 19.10, 72.90, 19.20), "Mumbai Suburban, Maharashtra")
+    office = feature(4, Point(72.83, 18.94), "Mumbai Suburban Collectorate (point)")
+    chosen = pick_largest_by_prefix([small, big, suburban, office], ["Mumbai City", "Mumbai Suburban"])
+    assert [f["properties"]["osm_id"] for f in chosen] == [2, 3]   # case-insensitive, points ignored
+
+
+def test_pick_largest_by_prefix_fails_loudly_when_nothing_matches():
+    only_point = feature(1, Point(72.8, 19.0), "Mumbai City")
+    with pytest.raises(LookupError, match="by hand"):
+        pick_largest_by_prefix([only_point], ["Mumbai City"])
