@@ -76,11 +76,11 @@ def subgrids(grid: Grid, size: int):
                              min(size, grid.width - c), min(size, grid.height - r))
 
 
-def compute_pixels_tiled(ee, image, grid: Grid, bands, size: int) -> dict[str, np.ndarray]:
+def compute_pixels_tiled(ee, image, grid: Grid, bands, size: int, *, keep_nan: bool = False) -> dict[str, np.ndarray]:
     """compute_pixels in tiles, for grids too large for one request."""
     out = {b: np.zeros(grid.shape) for b in bands}
     for r, c, sub in subgrids(grid, size):
-        part = compute_pixels(ee, image, sub, bands)
+        part = compute_pixels(ee, image, sub, bands, keep_nan=keep_nan)
         for b in bands:
             out[b][r:r + sub.height, c:c + sub.width] = part[b]
     return out
@@ -157,7 +157,6 @@ def run_items(items, path_for, fetch_and_write, *, workers: int = DEFAULT_WORKER
     if not todo:
         return summary
     log(f"  {label}: {len(todo)} to download, {len(summary['skipped'])} already on disk, {workers} threads")
-    started, finished = time.monotonic(), 0
 
     def one(item):
         try:
@@ -169,14 +168,15 @@ def run_items(items, path_for, fetch_and_write, *, workers: int = DEFAULT_WORKER
             log(f"  {label} {item}: failed after retries: {e}")
             return item, "failed"
 
-    with ThreadPoolExecutor(max_workers=max(1, workers)) as pool:
+    from urban_heat.logs import progress
+    with ThreadPoolExecutor(max_workers=max(1, workers)) as pool, \
+            progress(total=len(todo), desc=f"{label} download", unit="file") as bar:
         for fut in as_completed([pool.submit(one, it) for it in todo]):
             item, outcome = fut.result()
             summary[outcome].append(item)
-            finished += 1
-            if finished % 50 == 0 or finished == len(todo):
-                rate = finished / max(time.monotonic() - started, 1e-9)
-                log(f"  {label}: {finished}/{len(todo)} ({rate:.1f}/s, ~{(len(todo) - finished) / rate:.0f} s left)")
+            bar.set_postfix(done=len(summary["done"]), missing=len(summary["missing"]),
+                            failed=len(summary["failed"]))
+            bar.update(1)
     for k in ("done", "missing", "failed"):
         summary[k].sort(key=str)
     return summary
@@ -348,3 +348,21 @@ def download_era5(ee, grid_ll: Grid, years, *, workers: int = DEFAULT_WORKERS, l
         tmp.replace(path)
         catalog_add("ERA5-Land daily", str(year), f"Copernicus ERA5-Land via Earth Engine ({config.ERA5_COLLECTION})", path)
     return run_items(years, era5_path, go, workers=workers, log=log, label="ERA5-Land")
+
+
+# --- Elevation (Phase 4 feature, "where data quality permits") ------------------------------------
+
+def elevation_path() -> Path:
+    return config.RAW_ELEVATION / "srtm_30m.tif"
+
+
+def download_elevation(ee, grid30: Grid, *, workers: int = DEFAULT_WORKERS, log=print) -> dict:
+    """SRTM elevation (metres above sea level) on the 30 m grid, bilinear resampling."""
+    def go(_):
+        img = ee.Image(config.ELEVATION_ASSET).select("elevation").resample("bilinear")
+        bands = compute_pixels_tiled(ee, img, grid30, ["elevation"], 600, keep_nan=True)
+        path = write_tif(elevation_path(), bands, grid30, "float32",
+                         {"collection": config.ELEVATION_ASSET, "unit": "m", "resampling": "bilinear",
+                          "nodata": "NaN"})
+        catalog_add("SRTM elevation", "2000", f"NASA SRTM via Earth Engine ({config.ELEVATION_ASSET})", path)
+    return run_items(["srtm"], lambda _: elevation_path(), go, workers=1, log=log, label="Elevation")

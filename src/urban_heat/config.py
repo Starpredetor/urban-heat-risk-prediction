@@ -55,10 +55,21 @@ ERA5_BANDS = ("temperature_2m", "dewpoint_temperature_2m", "skin_temperature",
               "u_component_of_wind_10m", "v_component_of_wind_10m")
 ERA5_RES_DEG = 0.1                                          # native grid, cell centres on 0.1 deg
 
+# --- Phase 4: environmental features ------------------------------------------------
+RAW_ELEVATION = RAW / "elevation"
+ELEVATION_ASSET = "USGS/SRTMGL1_003"                        # SRTM 1 arc-second (~30 m)
+FEATURES = PROCESSED / "features"
+LANDCOVER_YEAR = 2021                                       # latest WorldCover release
+# Plan Phase 4 groups: built-up, vegetation, water, other (WorldCover class codes)
+LANDCOVER_GROUPS = {"built_up": (50,), "vegetation": (10, 20, 30, 40, 90, 95), "water": (80,),
+                    "other": (60, 70, 100)}
+MAJOR_WATER_MIN_KM2 = 1.0                                   # a water body counts as "major" from 1 km2
+
 
 def ensure_dirs() -> None:
     """Create the plan's folder structure if missing."""
     for d in (BOUNDARIES, RAW_MODIS, RAW_LANDSAT, RAW_WORLDCOVER, RAW_ERA5, PROCESSED, SEQUENCES,
+              RAW / "elevation", PROCESSED / "features",
               MODELS / "random_forest", MODELS / "convlstm",
               OUTPUTS / "historical_maps", OUTPUTS / "predicted_maps", OUTPUTS / "charts",
               OUTPUTS / "evaluation"):

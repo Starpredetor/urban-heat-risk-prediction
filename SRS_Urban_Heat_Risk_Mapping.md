@@ -253,6 +253,9 @@ These record decisions needed to carry out the plan; they add no features.
 | A5 | Phase 3, clipping | Processed rasters keep the common grid; cells outside both city boundaries are no-data (NaN, or 0 for class maps). A city-id mask (1 Mumbai, 2 Navi Mumbai) is saved per grid. |
 | A6 | Phase 3, ERA5-Land onto the 1 km grid | Each city cell copies the value of the ERA5-Land cell it falls in (no interpolation, so no false fine-scale detail). ERA5-Land has no data over the sea; city cells under a sea ERA5 cell take the nearest land cell, and these cells are recorded in a mask. |
 | A7 | Phase 3, WorldCover onto the 30 m grid | Mode (most common class) of the 3 x 3 nested 10 m pixels. |
+| A8 | Phase 4, land-cover groups | From WorldCover 2021: built-up = 50; vegetation = 10, 20, 30, 40, 90, 95 (tree, shrub, grass, crop, herbaceous wetland, mangroves); water = 80; other = 60, 70, 100. |
+| A9 | Phase 4, observation period and "major" water | Landsat features per selected year = per-pixel median of clear March-May observations, with the observation count kept. A major water body is connected permanent water of at least 1 km2. Elevation from SRTM 30 m (fetched in Phase 4, as the plan lists it there). |
+| A10 | Phase 4, ERA5-Land features | Daily values averaged over each MODIS 8-day period (cut at year end), so weather lines up with LST. Wind speed = period mean of daily speed from daily-mean u and v. Variables: 2 m air temperature, dewpoint, skin temperature, 10 m wind speed. |
 
 ## 6. Known issues to resolve during the phases
 | Issue | Phase | Note |

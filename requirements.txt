@@ -14,7 +14,9 @@ geopandas
 rasterio
 earthengine-api
 requests
+tqdm
 matplotlib
+scipy
 scikit-learn
 streamlit
 folium

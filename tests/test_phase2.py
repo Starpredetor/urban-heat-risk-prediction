@@ -152,3 +152,13 @@ def test_qc_summary():
     s = modis_qc.qc_summary(np.array([15000, 15000, 0]), np.array([0, 1, 0]), np.ones(3, bool))
     assert s == {"cells": 3, "no_lst_value": 1, "qa_good": 1, "qa_other_quality": 1,
                  "error_le_1K": 2, "error_le_2K": 0, "error_gt_2K": 0, "kept": 2}
+
+
+def test_progress_bar_logs_every_ten_percent(caplog):
+    import logging
+    from urban_heat.logs import progress
+    with caplog.at_level(logging.INFO, logger="progress"):
+        for _ in progress(range(20), desc="demo", unit="item"):
+            pass
+    lines = [r.getMessage() for r in caplog.records if r.name == "progress"]
+    assert len(lines) == 10 and lines[-1].startswith("demo: 20/20 (100%)")

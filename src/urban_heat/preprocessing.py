@@ -31,6 +31,7 @@ import numpy as np
 
 from urban_heat import acquisition as acq, boundaries as b, config, modis_qc
 from urban_heat.grid import Grid
+from urban_heat.logs import progress
 
 log = logging.getLogger("phase3")
 
@@ -114,7 +115,8 @@ def run_modis(grid: Grid, ids: np.ndarray, *, workers: int = 8) -> Path:
         return valid_fractions(d, lst, ids)
 
     with ThreadPoolExecutor(max_workers=workers) as pool:
-        rows = [r for rs in pool.map(one, dates) for r in rs]
+        rows = [r for rs in progress(pool.map(one, dates), total=len(dates), desc="MODIS QC + scale + clip",
+                                     unit="composite") for r in rs]
     out = config.PROCESSED / "modis_valid_fraction.csv"
     with open(out, "w", newline="", encoding="utf-8") as f:
         w = csv.DictWriter(f, fieldnames=list(rows[0]))
@@ -210,7 +212,8 @@ def run_landsat(grid: Grid, ids: np.ndarray, *, workers: int = 4, device=None) -
                 "clear_fraction_in_cities": round(int(clear.sum()) / n_in, 4)}
 
     with ThreadPoolExecutor(max_workers=workers) as pool:
-        rows = list(pool.map(one, scenes))
+        rows = list(progress(pool.map(one, scenes), total=len(scenes), desc="Landsat QA + scale + clip",
+                             unit="scene"))
     with open(config.PROCESSED / "landsat_clear_fraction.csv", "w", newline="", encoding="utf-8") as f:
         w = csv.DictWriter(f, fieldnames=["scene", "date", "coverage_of_cities", "clear_share_of_covered",
                                           "clear_fraction_in_cities"])
@@ -234,7 +237,7 @@ def block_mode(a: np.ndarray, f: int) -> np.ndarray:
 
 def run_worldcover(grid30: Grid, ids: np.ndarray) -> list[Path]:
     paths = []
-    for year in sorted(config.WORLDCOVER):
+    for year in progress(sorted(config.WORLDCOVER), desc="WorldCover to 30 m", unit="map"):
         out = P_WORLDCOVER / f"worldcover_{year}_30m.tif"
         if not out.exists():
             m10 = read(acq.worldcover_path(year))["Map"]
@@ -272,7 +275,8 @@ def era5_cell_lookup(grid1km: Grid, lons, lats, land) -> tuple[np.ndarray, np.nd
 
 def run_era5(grid: Grid, ids: np.ndarray) -> list[Path]:
     paths, lookup = [], None
-    for year in range(config.START_YEAR, config.END_YEAR + 1):
+    for year in progress(list(range(config.START_YEAR, config.END_YEAR + 1)), desc="ERA5-Land to 1 km grid",
+                         unit="year"):
         raw = acq.era5_path(year)
         if not raw.exists():
             log.warning("ERA5-Land %d: raw file missing", year)
