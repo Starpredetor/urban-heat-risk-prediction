@@ -1,5 +1,0 @@
-# Stage B: offline finalisation on frozen files (SRS FR-X.2, FR-X.4).
-backend: local_files
-# Relative paths are resolved from the repository root.
-storage_root: data
-ee_project: bright-proxy-514913-a3
