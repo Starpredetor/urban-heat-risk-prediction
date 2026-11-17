@@ -255,6 +255,9 @@ These record decisions needed to carry out the plan; they add no features.
 | A7 | Phase 3, WorldCover onto the 30 m grid | Mode (most common class) of the 3 x 3 nested 10 m pixels. |
 | A8 | Phase 4, land-cover groups | From WorldCover 2021: built-up = 50; vegetation = 10, 20, 30, 40, 90, 95 (tree, shrub, grass, crop, herbaceous wetland, mangroves); water = 80; other = 60, 70, 100. |
 | A9 | Phase 4, observation period and "major" water | Landsat features per selected year = per-pixel median of clear March-May observations, with the observation count kept. A major water body is connected permanent water of at least 1 km2. Elevation from SRTM 30 m (fetched in Phase 4, as the plan lists it there). |
+| A11 | Phase 5, yearly and seasonal statistics | A cell's annual / March-May LST for a year = mean of its valid 8-day composites in that period (no gap-filling); the number of composites used is kept. |
+| A12 | Phase 5, hotspots | Hotspot = a cell at or above its own city's 90th percentile of March-May LST that year (city-relative); persistent hotspot = hotspot in at least half of the years with data. |
+| A13 | Phase 5, change over time | Trend = least-squares slope of March-May LST on year per cell with at least 15 years (C/decade). Spatial change = (cell − city mean) 2021-2025 minus the same in 2001-2005, separating where heat moved from overall warming. |
 | A10 | Phase 4, ERA5-Land features | Daily values averaged over each MODIS 8-day period (cut at year end), so weather lines up with LST. Wind speed = period mean of daily speed from daily-mean u and v. Variables: 2 m air temperature, dewpoint, skin temperature, 10 m wind speed. |
 
 ## 6. Known issues to resolve during the phases
@@ -263,3 +266,4 @@ These record decisions needed to carry out the plan; they add no features.
 | A 64 × 64 patch at 1 km (64 × 64 km) is larger than either city | 7 | Patch extent must be decided when sequences are built. |
 | Landsat indices exist only from 2013, but training starts in 2001 | 4, 7 | The plan's "NDVI or vegetation proxy" must be chosen for 2001-2012. |
 | Monsoon cloud leaves many MODIS composites mostly empty | 3 | Handled under "handle missing observations carefully". |
+| **MODIS Terra orbit drift** | 5, 7 | Found in Phase 5: the March-May overpass over the study area was stable at about 10:40 local solar time from 2002 to 2021, then 10:33 (2022), 10:19 (2023), 10:04 (2024), 9:40 (2025) (`data/processed/analysis/terra_overpass_time.csv`). Earlier overpass means cooler measured LST, so 2022-2025 are biased low by the satellite. City-mean March-May trends: -0.80 (Mumbai) and -1.19 (Navi Mumbai) C/decade for 2001-2025, but -0.42 and -0.75 for the stable years 2002-2021; the remaining cooling is unexplained and unconfirmed. City-relative results (hotspots, relative change) are unaffected. **Phase 7's test years (2023-2025) fall in the drift period; how to handle this must be decided before training.** |

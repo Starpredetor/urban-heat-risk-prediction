@@ -366,3 +366,31 @@ def download_elevation(ee, grid30: Grid, *, workers: int = DEFAULT_WORKERS, log=
                           "nodata": "NaN"})
         catalog_add("SRTM elevation", "2000", f"NASA SRTM via Earth Engine ({config.ELEVATION_ASSET})", path)
     return run_items(["srtm"], lambda _: elevation_path(), go, workers=1, log=log, label="Elevation")
+
+
+# --- MODIS Terra overpass time (evidence for the Phase 5 / 7 orbit-drift check) -------------------
+
+def overpass_path() -> Path:
+    return config.PROCESSED / "analysis" / "terra_overpass_time.csv"
+
+
+def terra_overpass_by_year(ee, lonlat_bounds, months=(3, 4, 5)) -> Path:
+    """Mean MOD11A2 Day_view_time (local solar time, hours) over the study area for the
+    given months of each year. Terra's orbit drifted to earlier overpasses from 2022,
+    which lowers daytime LST independently of any change on the ground."""
+    region = ee.Geometry.Rectangle(list(lonlat_bounds))
+    col = ee.ImageCollection(config.MODIS_COLLECTION).select("Day_view_time")
+
+    def yearly(y):
+        img = col.filterDate(f"{y}-{min(months):02d}-01", f"{y}-{max(months) + 1:02d}-01").mean().multiply(0.1)
+        return ee.Feature(None, {"year": y, "hour": img.reduceRegion(ee.Reducer.mean(), region, 1000).get("Day_view_time")})
+
+    feats = ee.FeatureCollection([yearly(y) for y in range(config.START_YEAR, config.END_YEAR + 1)]).getInfo()["features"]
+    path = overpass_path()
+    path.parent.mkdir(parents=True, exist_ok=True)
+    with open(path, "w", newline="", encoding="utf-8") as f:
+        w = csv.writer(f)
+        w.writerow(["year", "season", "mean_day_view_time_local_solar_hours"])
+        for ft in feats:
+            w.writerow([ft["properties"]["year"], "March-May", round(ft["properties"]["hour"], 4)])
+    return path
