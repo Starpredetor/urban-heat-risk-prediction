@@ -14,9 +14,10 @@ from pathlib import Path, PurePosixPath
 import yaml
 
 from uhrm.modis import QcRule
+from uhrm.preprocess import ReflectanceRule
 
 ROOT = Path(__file__).resolve().parents[2]
-MODES = ("colab", "offline")
+MODES = ("colab", "local", "offline")
 BACKENDS = ("earthengine", "planetary_computer", "local_files")
 
 
@@ -79,6 +80,13 @@ class DatasetsConfig:
 
 
 @dataclass(frozen=True)
+class PreprocessConfig:
+    reflectance: ReflectanceRule
+    max_water_fraction: float
+    min_valid_fraction: float
+
+
+@dataclass(frozen=True)
 class Mode:
     name: str
     backend: str
@@ -92,6 +100,7 @@ class Project:
     grid: GridConfig
     modis: ModisConfig
     datasets: DatasetsConfig
+    preprocess: PreprocessConfig
     mode: Mode
 
     def path(self, *parts: str) -> Path:
@@ -127,6 +136,17 @@ def _datasets(d: dict) -> DatasetsConfig:
         worldcover=WorldCoverConfig(versions={int(k): v for k, v in w["versions"].items()},
                                     classes=tuple(int(c) for c in w["classes"])),
         terrain=TerrainConfig(asset=t["asset"]),
+    )
+
+
+def _preprocess(d: dict) -> PreprocessConfig:
+    r = d["reflectance"]
+    return PreprocessConfig(
+        reflectance=ReflectanceRule(scale=float(r["scale"]), valid_dn_range=tuple(r["valid_dn_range"]),
+                                    max_cirrus_class=int(r["max_cirrus_class"]),
+                                    min_clear_subpixels=int(r["min_clear_subpixels"])),
+        max_water_fraction=float(d["max_water_fraction"]),
+        min_valid_fraction=float(d["min_valid_fraction"]),
     )
 
 
@@ -169,6 +189,7 @@ def load_project(mode: str = "offline", *, config_path=None, storage_root=None) 
                       valid_dn_range=tuple(q["valid_dn_range"]),
                       plausible_celsius=tuple(q["plausible_celsius"]))),
         datasets=_datasets(raw["datasets"]),
+        preprocess=_preprocess(raw["preprocess"]),
         mode=Mode(name=mode, backend=mode_raw["backend"],
                   storage_root=Path(storage_root) if storage_root else _storage_root(mode_raw["storage_root"]),
                   ee_project=mode_raw.get("ee_project")),
@@ -208,3 +229,14 @@ def check(p: Project) -> None:
         raise ValueError("era5_land.hours_utc must be consecutive hours within 0..23")
     if not d.worldcover.versions or not d.worldcover.classes:
         raise ValueError("worldcover needs at least one release and one class")
+
+    pre = p.preprocess
+    if abs(pre.reflectance.scale - 0.0001) > 1e-12:
+        raise ValueError("MOD09A1 reflectance scale is 0.0001 per DN")
+    if not 0 <= pre.reflectance.max_cirrus_class <= 3:
+        raise ValueError("preprocess.reflectance.max_cirrus_class must be 0..3")
+    sub = d.reflectance.grid_refinement ** 2
+    if not 1 <= pre.reflectance.min_clear_subpixels <= sub:
+        raise ValueError(f"preprocess.reflectance.min_clear_subpixels must be 1..{sub}")
+    if not 0.0 <= pre.max_water_fraction <= 1.0 or not 0.0 <= pre.min_valid_fraction <= 1.0:
+        raise ValueError("preprocess fractions must be within 0..1")

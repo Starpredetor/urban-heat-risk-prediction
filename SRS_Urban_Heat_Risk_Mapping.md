@@ -313,7 +313,7 @@ Python libraries for raster, vector, ML and visualisation work (Appendix B); QGI
 - **FR-P3.3** Clip all data to the model domain and city masks, reproject to the common CRS, and resample to the common grids. Continuous bands use averaging or bilinear resampling; categorical and quality layers use nearest-neighbour or mode only.
 - **FR-P3.4 Missing data.** Every processed raster shall carry a validity mask. The system shall not silently fill gaps. Any gap-filling method shall be documented and flagged in the mask, and **target values shall never be gap-filled.** A configurable minimum valid-pixel fraction decides whether a date is usable in training sequences, and the chosen threshold is justified from the observed distribution.
 - **FR-P3.5** All outputs shall use consistent dates keyed to the MODIS 8-day composite start date; other sources are aligned to these windows (FR-P4.4).
-- **FR-P3.6** Processed rasters shall be saved as GeoTIFF with a manifest recording sources, scale factors and masks applied.
+- **FR-P3.6** Processed data shall be saved with a manifest recording sources, scale factors, masks applied and the grid. Implemented as one compressed NumPy cube per year range (`processed/cube_<y0>_<y1>.npz`, variables on the 1 km model grid) plus `.manifest.json`, because model sequences need the whole time series at once; raw inputs remain GeoTIFF (FR-P2.6).
 - **FR-P3.7** Unit tests shall check scaling against hand-computed values, mask decoding against constructed bit patterns, and grid alignment between layers.
 
 **Outputs:** `data/processed/` aligned rasters; manifest.

@@ -2,4 +2,4 @@
 backend: local_files
 # Relative paths are resolved from the repository root.
 storage_root: data
-ee_project: null
+ee_project: bright-proxy-514913-a3

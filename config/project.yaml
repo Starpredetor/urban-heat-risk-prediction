@@ -66,3 +66,19 @@ datasets:
   # Elevation mean and relief (std) per 1 km cell.
   terrain:
     asset: USGS/SRTMGL1_003
+
+# --- Phase 3 preprocessing (FR-P3.1 to FR-P3.6) -------------------------------
+preprocess:
+  reflectance:
+    scale: 0.0001                  # MOD09A1 surface reflectance per DN
+    valid_dn_range: [-100, 16000]
+    # StateQA: keep cloud state 00 (clear) and no cloud shadow; cirrus class
+    # 0 none, 1 small, 2 average, 3 high. Bit 10 is not used (sources disagree).
+    max_cirrus_class: 1
+    min_clear_subpixels: 2         # of the 4 x 500 m pixels in a 1 km cell
+  # A cell counts as water (excluded from validity statistics) above this
+  # WorldCover permanent-water fraction.
+  max_water_fraction: 0.5
+  # A date is usable for model sequences when at least this fraction of land
+  # cells has valid LST. Checked against the observed distribution (FR-P3.4).
+  min_valid_fraction: 0.3

@@ -1,0 +1,6 @@
+# Stage A on your own machine: data from Earth Engine, files under data/.
+# Same science config and same code as Colab; only where it runs differs (FR-X.2).
+backend: earthengine
+storage_root: data
+# Earth Engine Cloud project id. Leave null to read the environment variable EE_PROJECT.
+ee_project: bright-proxy-514913-a3

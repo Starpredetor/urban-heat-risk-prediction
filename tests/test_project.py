@@ -24,6 +24,12 @@ def test_colab_mode_uses_earth_engine_and_drive():
     assert "drive" in str(p.mode.storage_root).lower()
 
 
+def test_local_mode_uses_earth_engine_with_files_in_the_repo():
+    p = load_project("local")
+    assert p.mode.backend == "earthengine" and p.mode.storage_root.name == "data"
+    assert p.grid == load_project("colab").grid
+
+
 def test_modes_share_the_same_science_config():
     a, b = load_project("offline"), load_project("colab")
     assert a.study_areas == b.study_areas and a.grid == b.grid and a.modis == b.modis
