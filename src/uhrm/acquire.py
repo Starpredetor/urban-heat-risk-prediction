@@ -22,8 +22,18 @@ import numpy as np
 from uhrm.backends.base import ModisBackend, ModisComposite, RasterSet
 from uhrm.regions import Grid
 
-CATALOG_COLUMNS = ["dataset", "date", "region", "source", "path", "sha256",
+CATALOG_COLUMNS = ["dataset", "date", "city", "region", "source", "path", "sha256",
                    "exported_utc", "collection"]
+BOTH_CITIES = "mumbai+navi_mumbai"
+
+
+def latest_complete_year(dates) -> int | None:
+    """Most recent year with all 46 composites available (SRS OI-4: verify the end date)."""
+    per_year: dict[int, int] = {}
+    for d in dates:
+        per_year[d.year] = per_year.get(d.year, 0) + 1
+    complete = [y for y, n in per_year.items() if n >= COMPOSITES_PER_YEAR]
+    return max(complete) if complete else None
 
 COMPOSITES_PER_YEAR = 46   # MOD11A2 / MOD09A1 8-day composites start at day 1, 9, ..., 361
 
@@ -126,8 +136,26 @@ def _sha256(path: Path) -> str:
     return h.hexdigest()
 
 
+def _upgrade_catalog(catalog_path: Path) -> None:
+    """Rewrite an older catalogue under the current columns (new ones left blank, or
+    `city` set to both cities), so appended rows never land under the wrong header."""
+    with open(catalog_path, newline="", encoding="utf-8") as f:
+        reader = csv.DictReader(f)
+        if reader.fieldnames == CATALOG_COLUMNS:
+            return
+        rows = list(reader)
+    for r in rows:
+        r.setdefault("city", BOTH_CITIES)
+    with open(catalog_path, "w", newline="", encoding="utf-8") as f:
+        w = csv.DictWriter(f, fieldnames=CATALOG_COLUMNS, extrasaction="ignore", restval="")
+        w.writeheader()
+        w.writerows(rows)
+
+
 def _append_catalog(catalog_path: Path, row: dict) -> None:
     catalog_path.parent.mkdir(parents=True, exist_ok=True)
+    if catalog_path.exists():
+        _upgrade_catalog(catalog_path)
     new = not catalog_path.exists()
     with open(catalog_path, "a", newline="", encoding="utf-8") as f:
         w = csv.DictWriter(f, fieldnames=CATALOG_COLUMNS)
@@ -141,7 +169,8 @@ def _label(key) -> str:
 
 
 def acquire_series(fetch, keys, path_for, writer, catalog_path, *, dataset: str,
-                   region: str = "model_domain", retries: int = 3, base_delay: float = 2.0,
+                   region: str = "model_domain", city: str = BOTH_CITIES,
+                   retries: int = 3, base_delay: float = 2.0,
                    sleep=time.sleep, log=print, progress_every: int = 25) -> dict:
     """For each key: skip if its file exists, else fetch, write, and catalogue.
 
@@ -181,7 +210,7 @@ def acquire_series(fetch, keys, path_for, writer, catalog_path, *, dataset: str,
 
         writer(path, item)
         _append_catalog(catalog_path, {
-            "dataset": dataset, "date": _label(key), "region": region,
+            "dataset": dataset, "date": _label(key), "city": city, "region": region,
             "source": item.source, "path": str(path), "sha256": _sha256(path),
             "exported_utc": datetime.now(timezone.utc).isoformat(),
             "collection": item.meta.get("collection", ""),

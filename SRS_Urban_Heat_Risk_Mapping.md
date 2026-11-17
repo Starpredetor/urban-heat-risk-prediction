@@ -292,7 +292,9 @@ Python libraries for raster, vector, ML and visualisation work (Appendix B); QGI
 - **FR-P2.4** Retrieve ERA5-Land hourly variables for the domain for 2001 to the latest year: air temperature, humidity-related variables (for example dewpoint), 10 m wind components, and optionally soil or skin temperature.
 - **FR-P2.5** Retrieve terrain (SRTM elevation) and MODIS MOD09A1 8-day surface reflectance with its state-QA band. MOD09A1 gives NDVI, NDBI and NDWI at the MODIS cadence from 2001 onward (OI-2 resolved). It is fetched raw at 500 m and aggregated to 1 km in Phase 3 with a validity mask.
 - **FR-P2.6** Raw downloads shall be stored separately from processed files and never modified.
-- **FR-P2.7** The system shall maintain a CSV catalogue with dataset name, date, city or domain, source, file path, and checksum.
+- **FR-P2.7** The system shall maintain a CSV catalogue with dataset name, date, city, source, file path, and checksum. An older catalogue without the city column is upgraded in place.
+- **FR-P2.12** Landsat 8/9 is stored as one cloud-masked (QA_PIXEL bits 0-4) median composite of raw digital numbers per selected year over the configured months, on the Phase 1 30 m analysis grid, with a per-pixel count of clear scenes used. WorldCover is stored both as the 10 m class map over the analysis extent and as class fractions per 1 km cell.
+- **FR-P2.13** Before bulk download, the number of MOD11A2 composites available for the configured end year shall be reported, to confirm the year is complete (OI-4).
 - **FR-P2.8** Downloads shall be resumable, retry up to 3 times with exponential backoff, and log failures without stopping.
 - **FR-P2.9** A single-date test download of MOD11A2 shall pass Phase 3 checks before bulk download starts.
 - **FR-P2.10** In Stage A, acquisition shall run through the Earth Engine backend for the model-domain extent and be exported to Drive as GeoTIFF per FR-X.4.

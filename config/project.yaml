@@ -67,6 +67,18 @@ datasets:
   terrain:
     asset: USGS/SRTMGL1_003
 
+  # Landsat 8/9 Collection 2 Level-2 (FR-P2.2): surface reflectance (NDVI, NDBI,
+  # NDWI later) and surface temperature, on the 30 m analysis grid of Phase 1.
+  # One cloud-masked median composite per selected year over `months`, stored as
+  # raw digital numbers (scale factors are applied in Phase 3).
+  landsat:
+    collections: [LANDSAT/LC08/C02/T1_L2, LANDSAT/LC09/C02/T1_L2]
+    bands: [SR_B2, SR_B3, SR_B4, SR_B5, SR_B6, SR_B7, ST_B10]   # blue..swir2, thermal
+    start_year: 2013            # Landsat 8 launch
+    selected_years: null        # null = every year from start_year; or a list, e.g. [2014, 2019, 2024]
+    months: [3, 4, 5]           # pre-monsoon
+    max_scene_cloud: 60         # scene-level filter; pixels are masked by QA_PIXEL anyway
+
 # --- Phase 3 preprocessing (FR-P3.1 to FR-P3.6) -------------------------------
 preprocess:
   reflectance:

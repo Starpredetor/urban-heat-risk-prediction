@@ -72,11 +72,27 @@ class TerrainConfig:
 
 
 @dataclass(frozen=True)
+class LandsatConfig:
+    collections: tuple[str, ...]
+    bands: tuple[str, ...]
+    start_year: int
+    selected_years: tuple[int, ...] | None
+    months: tuple[int, ...]
+    max_scene_cloud: float
+
+    def years_within(self, years) -> list[int]:
+        """The requested years that Landsat should be fetched for."""
+        return [y for y in sorted(set(years)) if y >= self.start_year
+                and (self.selected_years is None or y in self.selected_years)]
+
+
+@dataclass(frozen=True)
 class DatasetsConfig:
     reflectance: ReflectanceConfig
     era5_land: Era5Config
     worldcover: WorldCoverConfig
     terrain: TerrainConfig
+    landsat: LandsatConfig
 
 
 @dataclass(frozen=True)
@@ -136,6 +152,13 @@ def _datasets(d: dict) -> DatasetsConfig:
         worldcover=WorldCoverConfig(versions={int(k): v for k, v in w["versions"].items()},
                                     classes=tuple(int(c) for c in w["classes"])),
         terrain=TerrainConfig(asset=t["asset"]),
+        landsat=LandsatConfig(
+            collections=tuple(d["landsat"]["collections"]), bands=tuple(d["landsat"]["bands"]),
+            start_year=int(d["landsat"]["start_year"]),
+            selected_years=(None if d["landsat"]["selected_years"] is None
+                            else tuple(int(y) for y in d["landsat"]["selected_years"])),
+            months=tuple(int(m) for m in d["landsat"]["months"]),
+            max_scene_cloud=float(d["landsat"]["max_scene_cloud"])),
     )
 
 
@@ -229,6 +252,13 @@ def check(p: Project) -> None:
         raise ValueError("era5_land.hours_utc must be consecutive hours within 0..23")
     if not d.worldcover.versions or not d.worldcover.classes:
         raise ValueError("worldcover needs at least one release and one class")
+
+    ls = d.landsat
+    if ls.start_year < 2013:
+        raise ValueError("landsat.start_year: Landsat 8 data starts in 2013")
+    months = list(ls.months)
+    if not months or months != list(range(min(months), max(months) + 1)) or not 1 <= min(months) <= max(months) <= 12:
+        raise ValueError("landsat.months must be consecutive months within 1..12")
 
     pre = p.preprocess
     if abs(pre.reflectance.scale - 0.0001) > 1e-12:

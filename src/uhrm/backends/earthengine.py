@@ -55,6 +55,16 @@ class _EarthEngine:
                 raise RuntimeError(f"Earth Engine returned {arr.shape} for {b}, expected {grid.shape}")
         return out
 
+    def _pixels_tiled(self, image, grid: Grid, bands: list[str], tile_cells: int) -> dict[str, np.ndarray]:
+        """Like `_pixels`, but in tiles of at most tile_cells x tile_cells, stitched back.
+        Needed for fine grids, whose single request would exceed Earth Engine's limits."""
+        out = {b: np.full(grid.shape, np.nan) for b in bands}
+        for row0, col0, sub in tiles(grid, tile_cells):
+            part = self._pixels(image, sub, bands)
+            for b in bands:
+                out[b][row0:row0 + sub.height, col0:col0 + sub.width] = part[b]
+        return out
+
     def _day(self, collection: str, d: date):
         """The (at most one) image of `collection` starting on `d`; LookupError if none."""
         day = self._ee.ImageCollection(collection).filterDate(
@@ -169,6 +179,63 @@ class EarthEngineWorldCover(_EarthEngine):
                 px[n][row0:row0 + sub.height, col0:col0 + sub.width] = part[n]
         return RasterSet(bands=px, source=f"earthengine:{asset}",
                          meta={"collection": asset, "year": year, "grid_res_m": grid.res})
+
+
+    def fetch_map(self, year: int, grid: Grid) -> RasterSet:
+        """The 10 m WorldCover class map itself (class codes, nearest neighbour)."""
+        if year not in self.versions:
+            raise LookupError(f"no WorldCover release configured for {year}")
+        asset = self.versions[year]
+        land = self._ee.ImageCollection(asset).first().select("Map")
+        px = self._pixels_tiled(land, grid, ["Map"], 1000)
+        return RasterSet(bands={"Map": np.nan_to_num(px["Map"])}, source=f"earthengine:{asset}",
+                         meta={"collection": asset, "year": year, "grid_res_m": grid.res})
+
+
+class EarthEngineLandsat(_EarthEngine):
+    """Landsat 8/9 Collection 2 Level-2: one cloud-masked median composite per year.
+
+    QA_PIXEL bits 0-4 (fill, dilated cloud, cirrus, cloud, cloud shadow) must all be
+    0 for a pixel to be used. Values stay raw digital numbers; Phase 3 applies
+    SR = DN * 0.0000275 - 0.2 and ST_K = DN * 0.00341802 + 149. A median of raw
+    DNs equals the median of scaled values because the scaling is linear and
+    increasing. `clear_count` is how many clear scenes each pixel's median used.
+    """
+
+    TILE_CELLS = 500      # 500 x 500 pixels at 30 m per request
+
+    def __init__(self, collections, bands, months, max_scene_cloud):
+        super().__init__()
+        self.collections, self.bands = list(collections), list(bands)
+        self.months, self.max_cloud = tuple(months), float(max_scene_cloud)
+
+    def fetch_composite(self, year: int, grid: Grid) -> RasterSet:
+        ee = self._ee
+        x0, y0, x1, y1 = grid.bounds
+        region = ee.Geometry.Rectangle([x0, y0, x1, y1], grid.crs, False)
+        col = ee.ImageCollection(self.collections[0])
+        for c in self.collections[1:]:
+            col = col.merge(ee.ImageCollection(c))
+        col = (col.filterBounds(region)
+               .filterDate(f"{year}-01-01", f"{year + 1}-01-01")
+               .filter(ee.Filter.calendarRange(min(self.months), max(self.months), "month"))
+               .filter(ee.Filter.lt("CLOUD_COVER", self.max_cloud)))
+        n = col.size().getInfo()
+        if n == 0:
+            raise LookupError(f"no Landsat scenes for {year} months {self.months}")
+
+        def clear(img):
+            bad = img.select("QA_PIXEL").bitwiseAnd(0b11111).neq(0)
+            return img.updateMask(bad.Not())
+
+        masked = col.map(clear)
+        comp = (masked.select(self.bands).median()
+                .addBands(masked.select(self.bands[0]).count().rename("clear_count")))
+        px = self._pixels_tiled(comp, grid, self.bands + ["clear_count"], self.TILE_CELLS)
+        return RasterSet(bands=px, source="earthengine:" + "+".join(self.collections),
+                         meta={"collection": "+".join(self.collections), "year": year,
+                               "months": ",".join(map(str, self.months)), "n_scenes": n,
+                               "scene_cloud_lt": self.max_cloud, "values": "raw DN median"})
 
 
 class EarthEngineTerrain(_EarthEngine):

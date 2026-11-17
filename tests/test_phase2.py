@@ -51,9 +51,27 @@ class FakeEra5:
 
 
 class FakeWorldCover:
+    def __init__(self):
+        self.map_shapes = []
+
     def fetch_fractions(self, year, grid):
         return RasterSet(bands={"c10": zeros(grid, 0.5), "c50": zeros(grid, 0.5)},
                          source="fake:wc", meta={"collection": f"FAKE/WC{year}"})
+
+    def fetch_map(self, year, grid):
+        self.map_shapes.append(grid.shape)
+        return RasterSet(bands={"Map": zeros(grid, 50)}, source="fake:wcmap",
+                         meta={"collection": f"FAKE/WC{year}"})
+
+
+class FakeLandsat:
+    def __init__(self):
+        self.calls = []
+
+    def fetch_composite(self, year, grid):
+        self.calls.append((year, grid.shape))
+        return RasterSet(bands={"SR_B4": zeros(grid, 9000), "clear_count": zeros(grid, 3)},
+                         source="fake:landsat", meta={"collection": "FAKE/L8+L9"})
 
 
 class FakeTerrain:
@@ -72,15 +90,19 @@ def fake_bands_writer(path, rs, grid, dtype="float32"):
     path.write_bytes(f"{dtype}|{grid.shape}|{sorted(rs.bands)}".encode())
 
 
+AGRID = Grid(crs="EPSG:32643", xmin=0.0, ymax=3000.0, res=30.0, width=100, height=100)   # 30 m
+
+
 def make_backends(**kw):
     return phase2.Backends(modis_lst=kw.get("lst", FakeLst()), modis_reflectance=kw.get("refl", FakeRefl()),
-                           era5=kw.get("era5", FakeEra5()), worldcover=FakeWorldCover(),
-                           terrain=FakeTerrain())
+                           era5=kw.get("era5", FakeEra5()), worldcover=kw.get("wc", FakeWorldCover()),
+                           terrain=FakeTerrain(), landsat=kw.get("landsat", FakeLandsat()))
 
 
 def run(tmp_path, backends=None, years=(2024,), **kw):
     project = load_project("offline", storage_root=tmp_path)
     logs = []
+    kw.setdefault("analysis_grid", AGRID)
     result = phase2.run_phase2(project, GRID, years, backends or make_backends(),
                                write_lst=fake_lst_writer, write_bands=fake_bands_writer,
                                log=logs.append, **kw)
@@ -127,13 +149,22 @@ def test_coverage_report_lists_missing_dates():
 # --- run_phase2 -------------------------------------------------------------------
 
 def test_full_run_fetches_everything_and_catalogues_it(tmp_path):
-    refl, era5 = FakeRefl(), FakeEra5()
-    project, result, _ = run(tmp_path, make_backends(refl=refl, era5=era5))
+    refl, era5, wc, landsat = FakeRefl(), FakeEra5(), FakeWorldCover(), FakeLandsat()
+    project, result, _ = run(tmp_path, make_backends(refl=refl, era5=era5, wc=wc, landsat=landsat))
 
     s = result["summaries"]
     assert [len(s[k]["fetched"]) for k in ("modis_lst", "modis_reflectance", "era5_land")] == [46, 46, 46]
     assert len(s["worldcover"]["fetched"]) == 2 and len(s["terrain"]["fetched"]) == 1
-    assert len(catalog_rows(tmp_path)) == 46 * 3 + 2 + 1
+    assert len(s["worldcover_map"]["fetched"]) == 2 and s["landsat"]["fetched"] == [2024]
+    rows = catalog_rows(tmp_path)
+    assert len(rows) == 46 * 3 + 2 + 1 + 2 + 1
+    assert {r["city"] for r in rows} == {"mumbai+navi_mumbai"}          # spec: catalogue has a city column
+
+    # Landsat on the 30 m analysis grid; WorldCover map on the same extent at 10 m
+    assert landsat.calls == [(2024, (100, 100))]
+    assert wc.map_shapes == [(300, 300), (300, 300)]
+    assert (tmp_path / "raw" / "landsat" / "landsat_2024_m3-5.tif").exists()
+    assert (tmp_path / "raw" / "worldcover" / "worldcover_2021_map_10m.tif").read_bytes().startswith(b"uint8")
     assert (tmp_path / "raw" / "worldcover" / "worldcover_2020_fractions.tif").exists()
     assert (tmp_path / "raw" / "terrain" / "srtm_terrain.tif").exists()
     assert result["coverage"]["modis_lst"][2024]["found"] == 46
@@ -176,11 +207,61 @@ def test_gap_in_a_series_shows_up_in_coverage_and_is_logged(tmp_path):
 def test_bad_arguments_are_rejected(tmp_path):
     project = load_project("offline", storage_root=tmp_path)
     with pytest.raises(ValueError, match="unknown datasets"):
+        phase2.run_phase2(project, GRID, [2024], make_backends(), which=("sentinel2",))
+    with pytest.raises(ValueError, match="years must lie within"):
+        phase2.run_phase2(project, GRID, [1999], make_backends(), analysis_grid=AGRID)
+    with pytest.raises(ValueError, match="years must lie within"):
+        phase2.run_phase2(project, GRID, [], make_backends(), analysis_grid=AGRID)
+
+
+def test_landsat_is_only_fetched_from_2013(tmp_path):
+    landsat = FakeLandsat()
+    _, result, logs = run(tmp_path, make_backends(landsat=landsat), years=(2010, 2011), which=("landsat",))
+    assert result["summaries"]["landsat"]["fetched"] == [] and landsat.calls == []
+    assert any("no selected Landsat years" in line for line in logs)
+
+
+def test_landsat_selected_years(tmp_path):
+    from dataclasses import replace
+    project = load_project("offline", storage_root=tmp_path)
+    ls = replace(project.datasets.landsat, selected_years=(2014, 2019))
+    assert ls.years_within(range(2010, 2025)) == [2014, 2019]
+    assert project.datasets.landsat.years_within([2012, 2013, 2024]) == [2013, 2024]
+
+
+def test_landsat_needs_the_phase1_analysis_grid(tmp_path):
+    project = load_project("offline", storage_root=tmp_path)
+    with pytest.raises(FileNotFoundError, match="grid_30m"):
         phase2.run_phase2(project, GRID, [2024], make_backends(), which=("landsat",))
-    with pytest.raises(ValueError, match="years must lie within"):
-        phase2.run_phase2(project, GRID, [1999], make_backends())
-    with pytest.raises(ValueError, match="years must lie within"):
-        phase2.run_phase2(project, GRID, [], make_backends())
+
+
+def test_end_year_is_verified_against_the_archive(tmp_path):
+    class ListingLst(FakeLst):
+        def list_composites(self, start, end):
+            return [d for d in acquire.expected_composite_dates(2024, 2025)
+                    if start <= d < end and d <= date(2025, 9, 14)]   # archive ends mid-2025
+
+    _, result, logs = run(tmp_path, make_backends(lst=ListingLst()), which=("modis_lst",))
+    check = result["end_check"]
+    assert check["year"] == 2025 and not check["complete"] and check["last_available"] == "2025-09-14"
+    assert any("[end check]" in line for line in logs)
+
+
+def test_latest_complete_year():
+    dates = acquire.expected_composite_dates(2023, 2024)[:-1]          # 2024 is one composite short
+    assert acquire.latest_complete_year(dates) == 2023
+    assert acquire.latest_complete_year([]) is None
+
+
+def test_old_catalogue_is_upgraded_not_misaligned(tmp_path):
+    old = tmp_path / "catalog.csv"
+    old.write_text("dataset,date,region,source,path,sha256,exported_utc,collection\n"
+                   "MOD11A2,2024-01-01,model_domain,s,p,abc,t,C\n", encoding="utf-8")
+    run(tmp_path, which=("terrain",))
+    rows = catalog_rows(tmp_path)
+    assert list(rows[0]) == acquire.CATALOG_COLUMNS
+    assert rows[0]["dataset"] == "MOD11A2" and rows[0]["city"] == "mumbai+navi_mumbai"
+    assert rows[0]["sha256"] == "abc" and rows[1]["dataset"] == "SRTM"
 
 
 def test_rasterset_requires_matching_band_shapes():
