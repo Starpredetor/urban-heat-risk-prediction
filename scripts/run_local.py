@@ -111,26 +111,24 @@ def cmd_boundaries(args):
 
 
 def cmd_grid(args):
-    project = setup(earth_engine=False)
+    """Phase 1: grid, city masks, land/water and coastal flags, QGIS outputs."""
+    from uhrm import phase1, plots
+    project = setup(args.ee_project, earth_engine=not args.no_earth_engine)
     geoms = {a.slug: regions.load_boundary(project.boundary_path(a), project.grid.crs) for a in project.study_areas}
-    grid = regions.Grid.covering(list(geoms.values()), res=project.grid.model_resolution_m,
-                                 buffer_m=project.grid.domain_buffer_km * 1000, crs=project.grid.crs)
-    masks = {s: grid.cell_mask(g, project.grid.min_cell_overlap) for s, g in geoms.items()}
-    for k, v in regions.cell_report(grid, masks).items():
-        print(f"{k}: {v}")
+    grid = phase1.model_grid(project, geoms)
+    phase1.check_grid_unchanged(grid, project.path("grid.json"))
     regions.save_grid(grid, project.path("grid.json"))
-
-    canvas = np.zeros(grid.shape)
-    for i, m in enumerate(masks.values(), start=1):
-        canvas[m] = i
-    x0, y0, x1, y1 = grid.bounds
-    fig, ax = plt.subplots(figsize=(7, 8))
-    ax.imshow(canvas, extent=(x0, x1, y0, y1), cmap="viridis")
-    outline(ax, geoms, "w-")
-    ax.set_title("Model domain: 1 km cells assigned to each city")
-    path = figures(project) / "grid_masks.png"
-    fig.savefig(path, dpi=120, bbox_inches="tight")
+    if not args.no_earth_engine:      # land/water from WorldCover (FR-P1.5); reused by Phase 2
+        phase2.run_phase2(project, grid, [project.modis.first_milestone_date.year],
+                          phase2.earthengine_backends(project), which=("worldcover",))
+    p1 = phase1.build(project, geoms, phase1.load_water_fraction(project), grid)
+    saved = phase1.save(p1, project)
+    for k, v in phase1.report(p1).items():
+        print(f"{k}: {v}")
+    path = figures(project) / "phase1_grid.png"
+    plots.phase1_map(p1).savefig(path, dpi=120, bbox_inches="tight")
     print("saved", path)
+    print("open in QGIS:", saved["cells"], "and", saved["combined"])
 
 
 def cmd_milestone(args):
@@ -146,29 +144,27 @@ def cmd_milestone(args):
     print(acquire.brief(acquire.acquire_modis(backend, grid, [day], out_dir, project.path("catalog.csv"))))
 
     import rasterio
+    from uhrm import diagnostics, phase1, plots
     with rasterio.open(acquire.composite_path(out_dir, day)) as src:
         dn, qc = src.read(1), src.read(2)
     lst = modis.process_composite(dn, qc, project.modis.qc)
-    print(f"composite {day}: whole domain {np.isfinite(lst).mean():.0%} valid")
-    for slug, m in masks.items():
-        v = lst[m]; ok = np.isfinite(v)
-        if ok.any():
-            print(f"  {slug}: {m.sum()} cells, {ok.mean():.0%} valid, LST {v[ok].min():.1f} to "
-                  f"{v[ok].max():.1f} C, mean {v[ok].mean():.1f} C")
-        else:
-            print(f"  {slug}: {m.sum()} cells, none valid on this date")
+    water = phase1.load_water_fraction(project)
+    if water is None:
+        sys.exit("no WorldCover water fraction yet: run the `grid` step first")
+    land = water <= project.preprocess.max_water_fraction
 
-    x0, y0, x1, y1 = grid.bounds
-    fig, axes = plt.subplots(1, 2, figsize=(13, 7))
-    im = axes[0].imshow(lst, extent=(x0, x1, y0, y1), cmap="inferno")
-    axes[0].set_title(f"MOD11A2 daytime LST (C), composite starting {day}")
-    fig.colorbar(im, ax=axes[0], shrink=0.7)
-    axes[1].imshow(np.isfinite(lst), extent=(x0, x1, y0, y1), cmap="gray")
-    axes[1].set_title("valid cells (white) after quality filter")
-    for ax in axes:
-        outline(ax, geoms, "c-")
+    has_value = dn >= project.modis.qc.valid_dn_range[0]
+    print("registration:", diagnostics.registration_offset(has_value, land))
+    for slug, m in masks.items():
+        v = lst[m & land]; ok = np.isfinite(v)
+        stats = (f"LST {v[ok].min():.1f} to {v[ok].max():.1f} C, mean {v[ok].mean():.1f} C"
+                 if ok.any() else "no valid cells")
+        print(f"\n{slug}: {int((m & land).sum())} land cells, {ok.mean():.0%} valid; {stats}")
+        print(json.dumps(diagnostics.qc_breakdown(dn, qc, m & land, project.modis.qc), indent=1))
+
     path = figures(project) / f"milestone_lst_{day:%Y%m%d}.png"
-    fig.savefig(path, dpi=120, bbox_inches="tight")
+    plots.lst_map(lst, grid, geoms, water, f"MOD11A2 daytime LST (C), composite starting {day}").savefig(
+        path, dpi=120, bbox_inches="tight")
     print("saved", path)
 
 
@@ -241,7 +237,10 @@ def main(argv=None):
     b.add_argument("--mumbai-ids", type=int, nargs="+")
     b.add_argument("--navi-mumbai-ids", dest="navi_ids", type=int, nargs="+")
     b.set_defaults(fn=cmd_boundaries)
-    sub.add_parser("grid").set_defaults(fn=cmd_grid)
+    gr = sub.add_parser("grid")
+    gr.add_argument("--no-earth-engine", action="store_true",
+                    help="skip fetching WorldCover (no land/water flags)")
+    gr.set_defaults(fn=cmd_grid)
     sub.add_parser("milestone").set_defaults(fn=cmd_milestone)
     ph = sub.add_parser("phase2")
     ph.add_argument("--years", default="2024", help="e.g. 2024, 2001-2025, 2003,2010")
